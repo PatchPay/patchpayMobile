@@ -9,7 +9,7 @@ import {
   Platform,
   ActivityIndicator,
 } from "react-native";
-import { Ionicons, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { getUser } from "@/api/authapi";
@@ -176,6 +176,7 @@ const ACTIONS = [
     bg: ["#2ec4b6", "#1aaa9e"] as [string, string],
     path: "/(components)/sendmoney",
     iconLib: "feather",
+    iconBg: "#e8faf8",
   },
   {
     icon: "arrow-up-circle",
@@ -183,6 +184,7 @@ const ACTIONS = [
     bg: ["#3a6df0", "#2558e8"] as [string, string],
     path: "/(components)/topupscreen",
     iconLib: "feather",
+    iconBg: "#eef2ff",
   },
   {
     icon: "shield-check",
@@ -190,13 +192,25 @@ const ACTIONS = [
     bg: ["#f5a623", "#e8960f"] as [string, string],
     path: "/(components)/escrow",
     iconLib: "material",
+    iconBg: "#fff1f1",
   },
+
   {
     icon: "file-text",
     label: "Create RFQ",
     bg: ["#e05c97", "#c9417e"] as [string, string],
     path: "/(components)/rfq",
     iconLib: "feather",
+    iconBg: "#fff8ec",
+  },
+
+  {
+    icon: "arrow-down-circle",
+    label: "Withdraw",
+    bg: ["#ef4444", "#dc2626"] as [string, string],
+    path: "/(components)/withdraw",
+    iconLib: "feather",
+    iconBg: "#fdf2f8",
   },
 ] as const;
 
@@ -207,6 +221,7 @@ export default function HomeScreen() {
   const [wallet, setWallet] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [pinModalVisible, setPinModalVisible] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -226,6 +241,14 @@ export default function HomeScreen() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!loading && user && !user.hasTransactionPin) {
+      setTimeout(() => {
+        setPinModalVisible(true);
+      }, 800); // slight delay feels more premium
+    }
+  }, [loading, user]);
 
   const balance: number = wallet?.balance ?? 0;
   const currency: string = wallet?.currency ?? "NGN";
@@ -473,65 +496,64 @@ export default function HomeScreen() {
           </View>
         </LinearGradient>
 
-        {/* ── Quick Actions ────────────────────────────────────────── */}
+        {/* Quick Actions Card */}
         <View
           style={{
-            marginTop: -56,
-            paddingBottom: 24,
-            backgroundColor: "transparent",
+            marginTop: -46,
+            marginHorizontal: 16,
+            backgroundColor: "#fff",
+            borderRadius: 20,
+            padding: 18,
+            paddingBottom: 16,
+            shadowColor: "#000",
+            shadowOpacity: 0.08,
+            shadowRadius: 16,
+            shadowOffset: { width: 0, height: 4 },
+            elevation: 10,
+            zIndex: 10,
           }}
         >
-          <View
+          <Text
             style={{
-              flexDirection: "row",
-              justifyContent: "space-around",
-              paddingHorizontal: 12,
+              fontSize: 10,
+              fontWeight: "700",
+              letterSpacing: 1.5,
+              textTransform: "uppercase",
+              color: "#94a3b8",
+              marginBottom: 14,
             }}
+          >
+            Quick actions
+          </Text>
+          <View
+            style={{ flexDirection: "row", justifyContent: "space-between" }}
           >
             {ACTIONS.map((action) => (
               <TouchableOpacity
                 key={action.label}
                 onPress={() => router.push(action.path)}
-                activeOpacity={0.82}
-                style={{ alignItems: "center", width: 80 }}
+                activeOpacity={0.75}
+                style={{ alignItems: "center", gap: 7 }}
               >
-                <LinearGradient
-                  colors={action.bg}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+                <View
                   style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 32,
+                    width: 46,
+                    height: 46,
+                    borderRadius: 14,
+                    backgroundColor: action.iconBg,
                     alignItems: "center",
                     justifyContent: "center",
-                    marginBottom: 8,
-                    shadowColor: action.bg[0],
-                    shadowOpacity: 0.45,
-                    shadowRadius: 12,
-                    shadowOffset: { width: 0, height: 6 },
-                    elevation: 8,
                   }}
                 >
-                  {action.iconLib === "material" ? (
-                    <MaterialCommunityIcons
-                      name={action.icon as any}
-                      size={26}
-                      color="#fff"
-                    />
-                  ) : (
-                    <Feather name={action.icon as any} size={24} color="#fff" />
-                  )}
-                </LinearGradient>
+                  {/* your icon here */}
+                </View>
                 <Text
                   style={{
-                    color: "#1a1a2e",
-                    fontSize: 11,
+                    fontSize: 10,
                     fontWeight: "600",
+                    color: "#374151",
                     textAlign: "center",
-                    lineHeight: 15,
                   }}
-                  numberOfLines={2}
                 >
                   {action.label}
                 </Text>
@@ -756,6 +778,118 @@ export default function HomeScreen() {
           )}
         </View>
       </ScrollView>
+      {pinModalVisible && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 90,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "flex-end",
+          }}
+        >
+          {/* Backdrop */}
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={() => setPinModalVisible(false)}
+          />
+
+          {/* Bottom Sheet */}
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 20,
+              paddingBottom: 30,
+            }}
+          >
+            {/* Handle bar */}
+            <View
+              style={{
+                width: 50,
+                height: 5,
+                backgroundColor: "#e2e8f0",
+                borderRadius: 3,
+                alignSelf: "center",
+                marginBottom: 15,
+              }}
+            />
+
+            {/* Icon */}
+            <View
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                backgroundColor: "#fff8ec",
+                alignItems: "center",
+                justifyContent: "center",
+                alignSelf: "center",
+                marginBottom: 12,
+              }}
+            >
+              <Feather name="shield" size={26} color="#f5a623" />
+            </View>
+
+            {/* Title */}
+            <Text
+              style={{
+                textAlign: "center",
+                fontSize: 18,
+                fontWeight: "800",
+                color: "#0f1923",
+              }}
+            >
+              Secure your account
+            </Text>
+
+            {/* Subtitle */}
+            <Text
+              style={{
+                textAlign: "center",
+                fontSize: 13,
+                color: "#64748b",
+                marginTop: 6,
+                marginBottom: 18,
+                paddingHorizontal: 10,
+              }}
+            >
+              Set a 4-digit transaction PIN to protect your payments and
+              withdrawals
+            </Text>
+
+            {/* Buttons */}
+            <TouchableOpacity
+              onPress={() => {
+                setPinModalVisible(false);
+                router.push("/(components)/settransactionpin");
+              }}
+              style={{
+                backgroundColor: "#6a3de8",
+                paddingVertical: 14,
+                borderRadius: 14,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: "#fff", fontWeight: "700" }}>
+                Set Transaction PIN
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setPinModalVisible(false)}
+              style={{ marginTop: 12, alignItems: "center" }}
+            >
+              <Text style={{ color: "#94a3b8", fontSize: 13 }}>
+                Maybe later
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
