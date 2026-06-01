@@ -3,7 +3,6 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   TextInput,
@@ -11,7 +10,7 @@ import {
 } from "react-native";
 
 import { useState } from "react";
-
+import Toast from "react-native-toast-message";
 import { Quote } from "@/types/rfq.types";
 
 import { STATUS_META } from "@/constant/rfq";
@@ -32,6 +31,11 @@ export default function QuoteCard({
 
   const [loading, setLoading] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
+
+  const [visible, setVisible] = useState(false);
+  const [pendingAction, setPendingAction] = useState<
+    "cancel" | "accept" | "reject" | null
+  >(null);
 
   // Edit form state — prefilled with quote data
   const [editAmount, setEditAmount] = useState(quote.amount.toString());
@@ -59,27 +63,33 @@ export default function QuoteCard({
     } catch (e: any) {
       const message =
         e?.response?.data?.message || e?.response?.data?.error || e.message;
-      Alert.alert("Error", message);
+      Toast.show({
+        type: "error",
+        text1: "Error updating RFQ",
+        text2: message,
+        position: "top",
+        visibilityTime: 3000,
+      });
+      console.log("Action error:", message);
     } finally {
       setLoading(false);
     }
   };
 
   const confirmAction = (action: "cancel" | "accept" | "reject") => {
-    const labels = { cancel: "Cancel", accept: "Accept", reject: "Reject" };
-    Alert.alert(
-      `${labels[action]} Quote`,
-      `Are you sure you want to ${action} RFQ #${quote.quote_number}?`,
-      [
-        { text: "No", style: "cancel" },
-        { text: "Yes", onPress: () => doAction(action) },
-      ],
-    );
+    setPendingAction(action);
+    setVisible(true);
   };
 
   const handleEditSubmit = async () => {
     if (!editDescription.trim() || !editAmount.trim() || !editQty.trim()) {
-      Alert.alert("Missing fields", "Please fill all fields.");
+      Toast.show({
+        type: "error",
+        text1: "Validation Error",
+        text2: "Please fill all fields.",
+        position: "top",
+        visibilityTime: 3000,
+      });
       return;
     }
     setEditSubmitting(true);
@@ -112,7 +122,13 @@ export default function QuoteCard({
     } catch (e: any) {
       const message =
         e?.response?.data?.message || e?.response?.data?.error || e.message;
-      Alert.alert("Error", message);
+      Toast.show({
+        type: "error",
+        text1: "Error updating RFQ",
+        text2: message,
+        position: "top",
+        visibilityTime: 3000,
+      });
     } finally {
       setEditSubmitting(false);
     }
@@ -324,7 +340,83 @@ export default function QuoteCard({
           </View>
         )}
       </View>
+      {/* ── Confirm Action Modal ── */}
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVisible(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: "rgba(0,0,0,0.4)",
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: "#fff",
+              borderRadius: 20,
+              padding: 24,
+              width: "80%",
+            }}
+          >
+            <Text
+              style={{
+                fontWeight: "800",
+                fontSize: 16,
+                marginBottom: 8,
+                color: "#0f1923",
+              }}
+            >
+              {pendingAction === "cancel"
+                ? "Cancel RFQ"
+                : pendingAction === "accept"
+                  ? "Accept RFQ"
+                  : "Reject RFQ"}
+            </Text>
 
+            <Text style={{ color: "#64748b", marginBottom: 20, fontSize: 14 }}>
+              Are you sure you want to {pendingAction} RFQ #{quote.quote_number}
+              ?
+            </Text>
+
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => setVisible(false)}
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor: "#f1f5f9",
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ fontWeight: "700", color: "#64748b" }}>No</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  setVisible(false);
+                  doAction(pendingAction!);
+                }}
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor:
+                    pendingAction === "accept" ? "#2ec4b6" : "#ef4444",
+                  alignItems: "center",
+                }}
+              >
+                <Text style={{ fontWeight: "700", color: "#fff" }}>Yes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       {/* ── Edit RFQ Modal ── */}
       <Modal
         visible={editModalOpen}

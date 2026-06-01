@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API = axios.create({
   baseURL: "https://patchpaybackend.onrender.com/api",
-  timeout: 10000,
+  timeout: 20000,
 });
 
 API.interceptors.request.use(async (config) => {
