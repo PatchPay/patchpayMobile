@@ -1,24 +1,23 @@
 import { useState, useCallback } from "react";
 
-import { Alert } from "react-native";
-
 import { Quote } from "../types/rfq.types";
 
-import { apiFetch } from "@/api/rfqapi";
+import { rfqService } from "@/api/rfqService";
 
 export function useRFQ() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
+  const [quotesError, setQuotesError] = useState<string | null>(null);
 
   const fetchQuotes = useCallback(async () => {
     setLoadingQuotes(true);
+    setQuotesError(null);
 
     try {
-      const data = await apiFetch("/quotes");
-
-      setQuotes(data.data ?? []);
+      const data = await rfqService.getQuotes();
+      setQuotes(data);
     } catch (e: any) {
-      Alert.alert("Error", e?.response?.data?.message || e.message);
+      setQuotesError(e?.response?.data?.message || e.message);
     } finally {
       setLoadingQuotes(false);
     }
@@ -27,6 +26,7 @@ export function useRFQ() {
   return {
     quotes,
     loadingQuotes,
+    quotesError,
     fetchQuotes,
   };
 }
