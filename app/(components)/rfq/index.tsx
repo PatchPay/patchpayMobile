@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -30,7 +31,8 @@ import { FoundUser } from "@/types/rfq.types";
 
 import { useRFQ } from "@/hooks/userfq";
 
-import { apiFetch, getAuthToken } from "@/api/rfqapi";
+import { getAuthToken } from "@/api/rfqapi";
+import { rfqService } from "@/api/rfqService";
 import Toast from "react-native-toast-message";
 
 type ProductItem = {
@@ -50,6 +52,7 @@ export default function RFQScreen() {
   ]);
 
   const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState<"NGN" | "USD" | "GBP">("NGN");
 
   const [deliveryType, setDeliveryType] = useState("Standard");
 
@@ -68,7 +71,7 @@ export default function RFQScreen() {
 
   const [submitting, setSubmitting] = useState(false);
 
-  const { quotes, loadingQuotes, fetchQuotes } = useRFQ();
+  const { quotes, loadingQuotes, quotesError, fetchQuotes } = useRFQ();
 
   useEffect(() => {
     const loadUser = async () => {
@@ -150,45 +153,27 @@ export default function RFQScreen() {
 
       const totalAmount = subtotal + transactionCharges;
 
-      await apiFetch("/create", {
-        method: "POST",
-
-        body: JSON.stringify({
-          recipientId: recipient._id,
-
-          product_description: productDescription,
-          product_quantity: totalQty,
-
-          amount: numAmount,
-
-          delivery_type: deliveryType,
-
-          trade_type: tradeType,
-
-          delivery_address: {
-            street: deliveryAddress.street.trim(),
-
-            city: deliveryAddress.city.trim(),
-
-            state: deliveryAddress.state.trim(),
-
-            country: deliveryAddress.country.trim(),
-
-            phoneNumber: recipient.phoneNumber,
-
-            postal_code: deliveryAddress.postal_code.trim(),
-          },
-
-          line_total: lineTotal,
-
-          delivery_charge: deliveryCharge,
-
-          transaction_charges: transactionCharges,
-
-          subtotal,
-
-          total_amount: totalAmount,
-        }),
+      await rfqService.createRFQ({
+        recipientId: recipient._id,
+        product_description: productDescription,
+        product_quantity: totalQty,
+        amount: numAmount,
+        delivery_type: deliveryType,
+        trade_type: tradeType,
+        delivery_address: {
+          street: deliveryAddress.street.trim(),
+          city: deliveryAddress.city.trim(),
+          state: deliveryAddress.state.trim(),
+          country: deliveryAddress.country.trim(),
+          phoneNumber: recipient.phoneNumber,
+          postal_code: deliveryAddress.postal_code.trim(),
+        },
+        currency,
+        line_total: lineTotal,
+        delivery_charge: deliveryCharge,
+        transaction_charges: transactionCharges,
+        subtotal,
+        total_amount: totalAmount,
       });
 
       Toast.show({
@@ -366,6 +351,14 @@ export default function RFQScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          tab === "my" ? (
+            <RefreshControl
+              refreshing={loadingQuotes}
+              onRefresh={fetchQuotes}
+            />
+          ) : undefined
+        }
         contentContainerStyle={{
           padding: 20,
           paddingBottom: 100,
@@ -609,6 +602,38 @@ export default function RFQScreen() {
                 placeholder="500000"
               />
             </FieldCard>
+            <FieldCard
+              icon="dollar-sign"
+              iconColor="#16a34a"
+              iconBg="#ecfdf5"
+              label="Currency"
+            >
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                {["NGN", "USD", "GBP"].map((c) => (
+                  <TouchableOpacity
+                    key={c}
+                    onPress={() => setCurrency(c as any)}
+                    style={{
+                      paddingVertical: 10,
+                      paddingHorizontal: 14,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: currency === c ? "#2541c4" : "#e2e8f0",
+                      backgroundColor: currency === c ? "#eef2ff" : "#fff",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontWeight: "700",
+                        color: currency === c ? "#2541c4" : "#94a3b8",
+                      }}
+                    >
+                      {c}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </FieldCard>
 
             <FieldCard
               icon="map-pin"
@@ -765,12 +790,84 @@ export default function RFQScreen() {
         ) : (
           <>
             {loadingQuotes ? (
-              <ActivityIndicator
-                color="#2541c4"
+              [0, 1, 2].map((item) => (
+                <View
+                  key={item}
+                  style={{
+                    backgroundColor: "#fff",
+                    borderRadius: 20,
+                    padding: 18,
+                    marginBottom: 14,
+                  }}
+                >
+                  <View
+                    style={{
+                      height: 16,
+                      width: "70%",
+                      backgroundColor: "#e2e8f0",
+                      borderRadius: 8,
+                      marginBottom: 12,
+                    }}
+                  />
+                  <View
+                    style={{
+                      height: 12,
+                      width: "45%",
+                      backgroundColor: "#eef2ff",
+                      borderRadius: 6,
+                      marginBottom: 18,
+                    }}
+                  />
+                  <View style={{ flexDirection: "row", gap: 10 }}>
+                    <View
+                      style={{
+                        flex: 1,
+                        height: 44,
+                        backgroundColor: "#f1f5f9",
+                        borderRadius: 12,
+                      }}
+                    />
+                    <View
+                      style={{
+                        flex: 1,
+                        height: 44,
+                        backgroundColor: "#f1f5f9",
+                        borderRadius: 12,
+                      }}
+                    />
+                  </View>
+                </View>
+              ))
+            ) : quotesError ? (
+              <View
                 style={{
-                  marginTop: 40,
+                  backgroundColor: "#fff1f1",
+                  borderRadius: 14,
+                  padding: 16,
+                  marginTop: 20,
                 }}
-              />
+              >
+                <Text style={{ color: "#ef4444", fontWeight: "700" }}>
+                  Unable to load RFQs
+                </Text>
+                <Text style={{ color: "#64748b", marginTop: 6 }}>
+                  {quotesError}
+                </Text>
+                <TouchableOpacity
+                  onPress={fetchQuotes}
+                  style={{
+                    marginTop: 12,
+                    backgroundColor: "#ef4444",
+                    borderRadius: 10,
+                    paddingVertical: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700" }}>
+                    Retry
+                  </Text>
+                </TouchableOpacity>
+              </View>
             ) : quotes.length === 0 ? (
               <View
                 style={{

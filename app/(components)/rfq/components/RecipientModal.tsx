@@ -43,6 +43,7 @@ export default function RecipientModal({
         `/users/search?query=${encodeURIComponent(query)}&searchType=${searchType}`,
       );
       setResult(data.data);
+      console.log("this the user", data.data);
     } catch (e: any) {
       setError(e.message ?? "User not found");
     } finally {

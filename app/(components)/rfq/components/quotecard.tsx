@@ -15,7 +15,8 @@ import { Quote } from "@/types/rfq.types";
 
 import { STATUS_META } from "@/constant/rfq";
 
-import { apiFetch } from "@/api/rfqapi";
+import { rfqService } from "@/api/rfqService";
+import { router } from "expo-router";
 
 export default function QuoteCard({
   quote,
@@ -27,7 +28,8 @@ export default function QuoteCard({
   onAction: () => void;
 }) {
   const meta = STATUS_META[quote.status] ?? STATUS_META.Pending;
-  const isIssuer = quote.user._id === currentUserId;
+  const isIssuer = quote.user?._id === currentUserId;
+  const isPending = quote.status?.toLowerCase() === "pending";
 
   const [loading, setLoading] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -43,21 +45,20 @@ export default function QuoteCard({
   const [editDescription, setEditDescription] = useState(
     quote.product_description,
   );
-  const [editDeliveryType, setEditDeliveryType] = useState(quote.delivery_type);
+  const [editDeliveryType, setEditDeliveryType] = useState(
+    quote.delivery_type ?? "Standard",
+  );
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   const doAction = async (action: "cancel" | "accept" | "reject") => {
     setLoading(true);
     try {
       if (action === "cancel") {
-        await apiFetch(`/quotes/${quote._id}/cancel`, { method: "PUT" });
+        await rfqService.cancelQuote(quote._id);
       } else if (action === "accept") {
-        await apiFetch(`/quotes/${quote._id}/accept`, { method: "PUT" });
+        await rfqService.acceptQuote(quote._id);
       } else {
-        await apiFetch(`/quotes/${quote._id}/reject`, {
-          method: "PUT",
-          body: JSON.stringify({ reason: "" }),
-        });
+        await rfqService.rejectQuote(quote._id);
       }
       onAction();
     } catch (e: any) {
@@ -102,19 +103,16 @@ export default function QuoteCard({
       const subtotal = lineTotal + deliveryCharge;
       const totalAmount = subtotal + transactionCharges;
 
-      await apiFetch(`/quotes/${quote._id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          product_description: editDescription.trim(),
-          product_quantity: numQty,
-          amount: numAmount,
-          delivery_type: editDeliveryType,
-          line_total: lineTotal,
-          delivery_charge: deliveryCharge,
-          transaction_charges: transactionCharges,
-          subtotal,
-          total_amount: totalAmount,
-        }),
+      await rfqService.updateQuote(quote._id, {
+        product_description: editDescription.trim(),
+        product_quantity: numQty,
+        amount: numAmount,
+        delivery_type: editDeliveryType,
+        line_total: lineTotal,
+        delivery_charge: deliveryCharge,
+        transaction_charges: transactionCharges,
+        subtotal,
+        total_amount: totalAmount,
       });
 
       setEditModalOpen(false);
@@ -154,7 +152,14 @@ export default function QuoteCard({
 
   return (
     <>
-      <View
+      <TouchableOpacity
+        activeOpacity={0.86}
+        onPress={() =>
+          router.push({
+            pathname: "/(components)/rfq/[quoteId]",
+            params: { quoteId: quote._id },
+          })
+        }
         style={{
           backgroundColor: "#fff",
           borderRadius: 20,
@@ -179,7 +184,8 @@ export default function QuoteCard({
               {quote.product_description}
             </Text>
             <Text style={{ color: "#94a3b8", fontSize: 12, marginTop: 3 }}>
-              RFQ #{quote.quote_number} · {quote.trade_type}
+              RFQ #{quote.quote_number ?? quote._id.slice(-6)} ·{" "}
+              {quote.trade_type ?? "Trade"}
             </Text>
           </View>
           <View
@@ -231,20 +237,20 @@ export default function QuoteCard({
             </Text>
             <Text style={{ color: "#475569", fontSize: 13, fontWeight: "600" }}>
               {isIssuer
-                ? `${quote.destinatary_user.firstName}`
-                : `${quote.user.firstName}`}
+                ? `${quote.destinatary_user?.firstName ?? quote.recipient?.firstName ?? "Recipient"}`
+                : `${quote.user?.firstName ?? quote.requester?.firstName ?? "Requester"}`}
             </Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={{ color: "#94a3b8", fontSize: 11 }}>Delivery</Text>
             <Text style={{ color: "#475569", fontSize: 13, fontWeight: "600" }}>
-              {quote.delivery_type}
+              {quote.delivery_type ?? "Standard"}
             </Text>
           </View>
         </View>
 
         {/* Actions */}
-        {quote.status === "Pending" && (
+        {isPending && (
           <View style={{ marginTop: 14 }}>
             {loading ? (
               <ActivityIndicator color="#2541c4" />
@@ -339,7 +345,7 @@ export default function QuoteCard({
             )}
           </View>
         )}
-      </View>
+      </TouchableOpacity>
       {/* ── Confirm Action Modal ── */}
       <Modal
         visible={visible}
