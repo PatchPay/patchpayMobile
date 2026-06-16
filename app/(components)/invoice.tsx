@@ -158,7 +158,16 @@ export default function InvoiceScreen() {
 
         await loadInvoice();
       }
+      // success logic...
     } catch (error: any) {
+      console.log("========== VERIFY PAYMENT ERROR ==========");
+      console.log("Full Error:", error);
+      console.log("Message:", error?.message);
+      console.log("Status:", error?.response?.status);
+      console.log("Response Data:", error?.response?.data);
+      console.log("Backend Message:", error?.response?.data?.message);
+      console.log("=========================================");
+
       Toast.show({
         type: "error",
         text1: "Verification Failed",
