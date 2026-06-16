@@ -28,7 +28,22 @@ export const invoiceService = {
   async verifyPayment(
     transactionRef: string,
   ): Promise<VerifyInvoicePaymentResponse> {
-    const res = await API.post("/invoices/verify-payment", { transactionRef });
-    return res.data;
+    try {
+      const res = await API.post("/invoices/verify-payment", {
+        transactionRef,
+      });
+
+      return res.data;
+    } catch (error: any) {
+      console.log("Verify Payment Error:", error);
+
+      console.log("Error Message:", error?.message);
+
+      console.log("Backend Response:", error?.response?.data);
+
+      console.log("Backend Message:", error?.response?.data?.message);
+
+      throw error; // re-throw so your UI catch block still works
+    }
   },
 };
