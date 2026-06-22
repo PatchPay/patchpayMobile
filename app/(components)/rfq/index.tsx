@@ -1,15 +1,14 @@
 import { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  StatusBar,
-  Platform,
   ActivityIndicator,
-  Alert,
+  Platform,
   RefreshControl,
+  ScrollView,
+  StatusBar,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
@@ -19,11 +18,10 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
 import { jwtDecode } from "jwt-decode";
-
 import FieldCard from "./components/FieldCard";
-import SelectPill from "./components/SelectPill";
-import RecipientModal from "./components/RecipientModal";
 import QuoteCard from "./components/quotecard";
+import RecipientModal from "./components/RecipientModal";
+import SelectPill from "./components/SelectPill";
 
 import { DELIVERY_TYPES, TRADE_TYPES } from "@/constant/rfq";
 
@@ -33,6 +31,9 @@ import { useRFQ } from "@/hooks/userfq";
 
 import { getAuthToken } from "@/api/rfqapi";
 import { rfqService } from "@/api/rfqService";
+
+import DateTimePicker from "@react-native-community/datetimepicker";
+
 import Toast from "react-native-toast-message";
 
 type ProductItem = {
@@ -45,6 +46,11 @@ export default function RFQScreen() {
   const [tab, setTab] = useState<"create" | "my">("create");
 
   const [recipient, setRecipient] = useState<FoundUser | null>(null);
+
+  const [arrivalDate, setArrivalDate] = useState<Date | null>(null);
+  const [arrivalTime, setArrivalTime] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   const [recipientModalOpen, setRecipientModalOpen] = useState(false);
   const [products, setProducts] = useState<ProductItem[]>([
@@ -96,6 +102,16 @@ export default function RFQScreen() {
       fetchQuotes();
     }
   }, [tab, fetchQuotes]);
+
+  const formatDate = (d: Date) =>
+    d.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+
+  const formatTime = (t: Date) =>
+    t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
   const handlePublish = async () => {
     if (!recipient) {
@@ -174,6 +190,11 @@ export default function RFQScreen() {
         transaction_charges: transactionCharges,
         subtotal,
         total_amount: totalAmount,
+
+        arrival_date: arrivalDate
+          ? arrivalDate.toISOString().split("T")[0]
+          : "",
+        arrival_time: arrivalTime ? formatTime(arrivalTime) : "",
       });
 
       Toast.show({
@@ -189,6 +210,9 @@ export default function RFQScreen() {
       setProducts([{ name: "", quantity: "", unit: "pcs" }]);
 
       setAmount("");
+
+      setArrivalDate(null);
+      setArrivalTime(null);
 
       setDeliveryType("Standard");
 
@@ -207,7 +231,13 @@ export default function RFQScreen() {
     } catch (e: any) {
       const message = e?.response?.data?.message || e.message;
 
-      Alert.alert("Error", message);
+      Toast.show({
+        type: "error", // "success" | "error" | "info"
+        text1: "Error",
+        text2: message,
+        position: "top", // "top" | "bottom"
+        visibilityTime: 3000,
+      });
       console.log("error message", message);
     } finally {
       setSubmitting(false);
@@ -732,6 +762,99 @@ export default function RFQScreen() {
                 />
               </View>
             </FieldCard>
+
+            <FieldCard
+              icon="calendar"
+              iconColor="#f59e0b"
+              iconBg="#fffbeb"
+              label="Arrival Date & Time"
+            >
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {/* Date picker trigger */}
+                <TouchableOpacity
+                  onPress={() => setShowDatePicker(true)}
+                  style={{
+                    flex: 1,
+                    borderWidth: 1,
+                    borderColor: "#e2e8f0",
+                    borderRadius: 10,
+                    padding: 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    backgroundColor: "#fff",
+                  }}
+                >
+                  <Feather name="calendar" size={15} color="#f59e0b" />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: arrivalDate ? "#0f1923" : "#cbd5e1",
+                    }}
+                  >
+                    {arrivalDate ? formatDate(arrivalDate) : "Select date"}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Time picker trigger */}
+                <TouchableOpacity
+                  onPress={() => setShowTimePicker(true)}
+                  style={{
+                    flex: 1,
+                    borderWidth: 1,
+                    borderColor: "#e2e8f0",
+                    borderRadius: 10,
+                    padding: 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    backgroundColor: "#fff",
+                  }}
+                >
+                  <Feather name="clock" size={15} color="#f59e0b" />
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: arrivalTime ? "#0f1923" : "#cbd5e1",
+                    }}
+                  >
+                    {arrivalTime ? formatTime(arrivalTime) : "Select time"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={{ color: "#94a3b8", fontSize: 11, marginTop: 6 }}>
+                Expected arrival date and time of delivery
+              </Text>
+
+              {/* Date Picker */}
+              {showDatePicker && (
+                <DateTimePicker
+                  value={arrivalDate || new Date()}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "inline" : "default"}
+                  minimumDate={new Date()}
+                  onChange={(_, selected) => {
+                    setShowDatePicker(false);
+                    if (selected) setArrivalDate(selected);
+                  }}
+                />
+              )}
+
+              {/* Time Picker */}
+              {showTimePicker && (
+                <DateTimePicker
+                  value={arrivalTime || new Date()}
+                  mode="time"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={(_, selected) => {
+                    setShowTimePicker(false);
+                    if (selected) setArrivalTime(selected);
+                  }}
+                />
+              )}
+            </FieldCard>
+
             <FieldCard
               icon="truck"
               iconColor="#3a6df0"

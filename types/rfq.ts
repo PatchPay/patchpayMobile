@@ -81,4 +81,6 @@ export interface CreateRFQPayload {
   transaction_charges: number;
   subtotal: number;
   total_amount: number;
+  arrival_date: string;
+  arrival_time: string;
 }
