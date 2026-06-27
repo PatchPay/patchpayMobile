@@ -1,23 +1,23 @@
+import { Bank } from "@/constant/bank";
+import { AccountLookupResponse } from "@/hooks/useacctlookup";
+import { Beneficiary } from "@/hooks/usebene";
 import {
-  View,
+  ActivityIndicator,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  ActivityIndicator,
-  StyleSheet,
+  View,
 } from "react-native";
-import { Beneficiary } from "@/hooks/usebene";
-import { AccountLookupResponse } from "@/hooks/useacctlookup";
-import { TransferType } from "./TransferTypeSelector";
-import { Bank } from "@/constant/bank";
 import BankPicker from "./bankpicker"; // see below
+import { TransferType } from "./TransferTypeSelector";
 
 type Props = {
   type: TransferType;
   beneficiaries: Beneficiary[];
   loadingBeneficiaries: boolean;
   selectedBeneficiaryId: string | null;
-  accountNumber: string;
+  recipientAccount: string;
   selectedBank: Bank | null;
   lookupLoading: boolean;
   lookupError: string;
@@ -34,7 +34,7 @@ export default function RecipientStep({
   beneficiaries,
   loadingBeneficiaries,
   selectedBeneficiaryId,
-  accountNumber,
+  recipientAccount,
   selectedBank,
   lookupLoading,
   lookupError,
@@ -45,7 +45,7 @@ export default function RecipientStep({
   onContinue,
   onBack,
 }: Props) {
-  const accountReady = accountNumber.length === 10;
+  const accountReady = recipientAccount.length === 10;
   const canContinue =
     accountReady &&
     !!accountInfo &&
@@ -100,7 +100,7 @@ export default function RecipientStep({
 
       <TextInput
         placeholder="Account number"
-        value={accountNumber}
+        value={recipientAccount}
         onChangeText={onChangeAccountNumber}
         keyboardType="numeric"
         maxLength={10}

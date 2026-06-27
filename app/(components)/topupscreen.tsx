@@ -1,23 +1,23 @@
-import { useState, useRef } from "react";
+import API from "@/api/axiosInstance";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
+import { useRef, useState } from "react";
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  TextInput,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Platform,
+  SafeAreaView,
   ScrollView,
   StatusBar,
-  Platform,
-  Alert,
-  ActivityIndicator,
-  Modal,
-  SafeAreaView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { WebView, WebViewNavigation } from "react-native-webview";
-import { LinearGradient } from "expo-linear-gradient";
-import { Feather, Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import API from "@/api/axiosInstance";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type PaymentStatus = "idle" | "initiating" | "verifying" | "success" | "error";
@@ -168,6 +168,7 @@ export default function TopUpScreen() {
       const message =
         err?.response?.data?.message || err.message || "Verification failed";
       setErrorMsg(message);
+      console.log("this is the error message", message);
       Alert.alert("Verification Failed", message);
     }
   };
