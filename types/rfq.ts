@@ -43,6 +43,8 @@ export interface Quote {
   delivery_type?: string;
   trade_type?: string;
   createdAt: string;
+  arrival_date: string;
+  arrival_time: string;
   invoiceId?: string;
   invoice_id?: string;
   invoiceID?: string;

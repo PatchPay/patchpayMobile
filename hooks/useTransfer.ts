@@ -1,16 +1,19 @@
-import { useCallback, useState } from "react";
 import API from "@/api/axiosInstance";
+import { useCallback, useState } from "react";
 
 export type InternalTransferPayload = {
-  accountNumber: string;
-
+  recipientAccount: string;
   amount: number;
   transactionPin: string;
   description?: string;
 };
 
-export type ExternalTransferPayload = InternalTransferPayload & {
+export type ExternalTransferPayload = {
+  accountNumber: string;
   bankCode: string;
+  amount: number;
+  transactionPin: string;
+  description?: string;
 };
 
 export type TransferType = "internal" | "external";
@@ -19,7 +22,7 @@ export type TransferPayload = InternalTransferPayload | ExternalTransferPayload;
 
 export type TransferResponse = Record<string, unknown>;
 
-// ✅ generate unique idempotency key per request
+// ✅ Generate unique idempotency key per request
 const generateIdempotencyKey = () => {
   return `tx_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 };
@@ -49,7 +52,6 @@ export function useTransfer() {
             ? "/transfers/internal"
             : "/transfers/external-bank";
 
-        // ✅ IMPORTANT: create idempotency key here
         const idempotencyKey = generateIdempotencyKey();
 
         console.log("================================");

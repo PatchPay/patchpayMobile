@@ -38,6 +38,8 @@ export interface InvoiceMetadata {
  * 🔥 NEW: RFQ reference (your backend nested object)
  */
 export interface RFQ {
+  arrival_date: any;
+  arrival_time: string;
   _id: string;
 
   amount: number;
@@ -73,6 +75,7 @@ export interface RFQ {
 }
 
 export interface Invoice {
+  inv: any;
   _id: string;
 
   amount: number;

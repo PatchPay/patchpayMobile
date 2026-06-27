@@ -1,20 +1,21 @@
-import { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Pressable,
-  Platform,
-  ActivityIndicator,
-} from "react-native";
-import { Ionicons, Feather } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 import { getUser } from "@/api/authapi";
 import { getUserTransactions, getWallet } from "@/api/walletapi";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StatusBar,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 // ── Currency config ───────────────────────────────────────────────────────────
 type SupportedCurrency = "NGN" | "USD" | "EUR" | "GBP" | "TZS";
@@ -41,18 +42,11 @@ const formatBalance = (amount: number, currency: string): string => {
       maximumFractionDigits: 2,
     }).format(amount);
   } catch {
-    return `${currency} ${amount.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-    })}`;
+    return `${currency} ${amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
   }
 };
 
 // ── Transaction helpers ───────────────────────────────────────────────────────
-
-/**
- * Maps a transaction type + direction to a Feather icon name and colours.
- * Covers the fields your DB actually stores.
- */
 const getTxMeta = (tx: any, walletId: string) => {
   const type: string = tx.type?.toLowerCase() ?? "";
   const isIncoming =
@@ -87,21 +81,18 @@ const getTxMeta = (tx: any, walletId: string) => {
   );
 };
 
-/** Human-readable label from the type field */
 const getTxLabel = (tx: any): string => {
   const type: string = tx.type?.toLowerCase() ?? "";
   if (type === "deposit") return "Wallet Top-up";
   if (type === "withdrawal") return "Withdrawal";
-  if (type === "transfer") {
+  if (type === "transfer")
     return tx.description?.includes("to") ? tx.description : "Transfer";
-  }
   if (type === "escrow") return "Escrow Payment";
   if (type === "payment") return "Payment";
   if (type === "refund") return "Refund";
   return tx.description ?? "Transaction";
 };
 
-/** Format createdAt → "Apr 14, 2026 · 12:09 AM" */
 const formatTxDate = (dateStr: string): string => {
   try {
     const d = new Date(dateStr);
@@ -112,26 +103,20 @@ const formatTxDate = (dateStr: string): string => {
         year: "numeric",
       }) +
       " · " +
-      d.toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-      })
+      d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
     );
   } catch {
     return dateStr;
   }
 };
 
-/** Whether a transaction is incoming (positive) for the current user's wallet */
 const isIncomingTx = (tx: any, walletId: string): boolean => {
   const type = tx.type?.toLowerCase() ?? "";
   if (type === "deposit" || type === "refund") return true;
   if (type === "withdrawal") return false;
-  // For transfers, check recipient
   return tx.recipientWallet === walletId;
 };
 
-// ── Status badge config ───────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<
   string,
   { label: string; textColor: string; bgColor: string; dot: string }
@@ -172,45 +157,43 @@ const STATUS_CONFIG: Record<
 const ACTIONS = [
   {
     icon: "credit-card",
-    label: "Payments",
+    label: "Pay",
     bg: ["#2ec4b6", "#1aaa9e"] as [string, string],
     path: "/(components)/sendmoney",
-    iconLib: "feather",
     iconBg: "#e8faf8",
+    iconColor: "#2ec4b6",
   },
   {
     icon: "arrow-up-circle",
-    label: "Top-up my\naccount",
+    label: "Top Up",
     bg: ["#3a6df0", "#2558e8"] as [string, string],
     path: "/(components)/topupscreen",
-    iconLib: "feather",
     iconBg: "#eef2ff",
+    iconColor: "#3a6df0",
   },
   {
-    icon: "shield-check",
+    icon: "shield",
     label: "Escrow",
     bg: ["#f5a623", "#e8960f"] as [string, string],
     path: "/(components)/escrow",
-    iconLib: "material",
-    iconBg: "#fff1f1",
+    iconBg: "#fff8ec",
+    iconColor: "#f5a623",
   },
-
   {
     icon: "file-text",
-    label: "Create RFQ",
+    label: "RFQ",
     bg: ["#e05c97", "#c9417e"] as [string, string],
     path: "/(components)/rfq",
-    iconLib: "feather",
-    iconBg: "#fff8ec",
+    iconBg: "#fdf2f8",
+    iconColor: "#e05c97",
   },
-
   {
     icon: "arrow-down-circle",
     label: "Withdraw",
     bg: ["#ef4444", "#dc2626"] as [string, string],
     path: "/(components)/withdraw",
-    iconLib: "feather",
-    iconBg: "#fdf2f8",
+    iconBg: "#fff1f1",
+    iconColor: "#ef4444",
   },
 ] as const;
 
@@ -222,20 +205,25 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchData = async () => {
+    try {
+      const [u, w] = await Promise.all([getUser(), getWallet()]);
+      const tx = await getUserTransactions(u._id);
+      setUser(u);
+      setWallet(w?.data ?? w);
+      const txList = tx?.data ?? tx ?? [];
+      setTransactions(Array.isArray(txList) ? txList : []);
+    } catch (e) {
+      console.log("Fetch error:", e);
+    }
+  };
 
   useEffect(() => {
     (async () => {
       try {
-        // ✅ Fixed: was [u, w] before — tx was never assigned
-        const [u, w] = await Promise.all([getUser(), getWallet()]);
-        const tx = await getUserTransactions(u._id);
-        setUser(u);
-        setWallet(w?.data ?? w);
-        // Support both { data: [...] } and plain array responses
-        const txList = tx?.data ?? tx ?? [];
-        setTransactions(Array.isArray(txList) ? txList : []);
-      } catch (e) {
-        console.log("Fetch error:", e);
+        await fetchData();
       } finally {
         setLoading(false);
       }
@@ -244,9 +232,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (!loading && user && !user.hasTransactionPin) {
-      setTimeout(() => {
-        setPinModalVisible(true);
-      }, 800); // slight delay feels more premium
+      setTimeout(() => setPinModalVisible(true), 800);
     }
   }, [loading, user]);
 
@@ -258,14 +244,30 @@ export default function HomeScreen() {
   const firstName: string = user?.firstName ?? "User";
   const surname: string = user?.surname ?? "";
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchData();
+    } catch (e) {
+      console.log(e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const formattedBalance = loading
     ? "—"
     : balanceVisible
       ? formatBalance(balance, currency)
       : "••••••••";
 
+  // ── Greeting ──────────────────────────────────────────────────────────────
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
   return (
-    <View style={{ flex: 1, backgroundColor: "#f2f4f8" }}>
+    <View style={{ flex: 1, backgroundColor: "#f0f2f8" }}>
       <StatusBar
         barStyle="light-content"
         backgroundColor="transparent"
@@ -276,53 +278,57 @@ export default function HomeScreen() {
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 110 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
       >
-        {/* ── Hero gradient ───────────────────────────────────────── */}
+        {/* ── Hero gradient ──────────────────────────────────────────────── */}
         <LinearGradient
-          colors={["#1a1060", "#1e2d8f", "#2541c4", "#6a3de8", "#b04fc9"]}
-          locations={[0, 0.25, 0.5, 0.75, 1]}
+          colors={["#0d0a2e", "#1a1060", "#2541c4", "#6a3de8"]}
+          locations={[0, 0.3, 0.65, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={{
-            paddingTop: Platform.OS === "ios" ? 60 : 48,
-            paddingBottom: 100,
-            paddingHorizontal: 20,
+            paddingTop: Platform.OS === "ios" ? 58 : 46,
+            paddingBottom: 110,
+            paddingHorizontal: 22,
             position: "relative",
+            overflow: "hidden",
           }}
         >
           {/* Decorative orbs */}
           <View
             style={{
               position: "absolute",
-              top: 60,
-              left: -30,
-              width: 140,
-              height: 140,
-              borderRadius: 70,
-              backgroundColor: "rgba(180, 80, 200, 0.35)",
+              top: -20,
+              right: -40,
+              width: 200,
+              height: 200,
+              borderRadius: 100,
+              backgroundColor: "rgba(106,61,232,0.35)",
             }}
           />
           <View
             style={{
               position: "absolute",
-              top: 20,
-              right: -20,
-              width: 160,
-              height: 160,
-              borderRadius: 80,
-              backgroundColor: "rgba(100, 150, 255, 0.2)",
+              bottom: 20,
+              left: -50,
+              width: 170,
+              height: 170,
+              borderRadius: 85,
+              backgroundColor: "rgba(37,65,196,0.3)",
             }}
           />
           <View
             style={{
               position: "absolute",
-              top: 100,
-              right: 10,
-              width: 90,
-              height: 90,
-              borderRadius: 45,
-              borderWidth: 2,
-              borderColor: "rgba(200, 120, 220, 0.5)",
+              top: 80,
+              right: 30,
+              width: 60,
+              height: 60,
+              borderRadius: 30,
+              borderWidth: 1.5,
+              borderColor: "rgba(176,79,201,0.5)",
               backgroundColor: "transparent",
             }}
           />
@@ -333,134 +339,182 @@ export default function HomeScreen() {
               flexDirection: "row",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: 6,
+              marginBottom: 24,
             }}
           >
-            <TouchableOpacity>
-              <Ionicons name="menu" size={26} color="#fff" />
-            </TouchableOpacity>
-            <Text
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              {/* Avatar placeholder */}
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: "rgba(255,255,255,0.15)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderWidth: 1.5,
+                  borderColor: "rgba(255,255,255,0.25)",
+                }}
+              >
+                <Text
+                  style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}
+                >
+                  {firstName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View>
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.55)",
+                    fontSize: 11,
+                    fontWeight: "500",
+                  }}
+                >
+                  {loading ? "Hello..." : greeting}
+                </Text>
+                <Text
+                  style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}
+                >
+                  {loading ? "..." : `${firstName} ${surname}`.trim()}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
               style={{
-                color: "rgba(255,255,255,0.85)",
-                fontSize: 14,
-                fontWeight: "500",
+                width: 38,
+                height: 38,
+                borderRadius: 19,
+                backgroundColor: "rgba(255,255,255,0.1)",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {loading ? "Hello..." : `Hello ${firstName} ${surname}`.trim()}
-            </Text>
-            <TouchableOpacity>
               <Ionicons
-                name="ellipsis-vertical"
-                size={20}
-                color="rgba(255,255,255,0.7)"
+                name="notifications-outline"
+                size={19}
+                color="rgba(255,255,255,0.85)"
               />
             </TouchableOpacity>
           </View>
 
-          {/* App name */}
-          <Text
+          {/* Balance card */}
+          <BlurView
+            intensity={25}
+            tint="light"
             style={{
-              color: "#fff",
-              fontSize: 46,
-              fontWeight: "900",
-              letterSpacing: -1.5,
-              textAlign: "center",
-              marginBottom: 22,
-              marginTop: 4,
+              borderRadius: 24,
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.2)",
+              backgroundColor: "rgba(255,255,255,0.1)",
+              overflow: "hidden",
+              padding: 22,
             }}
           >
-            PatchPay
-          </Text>
-
-          {/* Balance card */}
-          <View
-            style={{ borderRadius: 20, overflow: "hidden", marginBottom: 4 }}
-          >
-            <BlurView
-              intensity={30}
-              tint="light"
+            {/* Currency flag + label */}
+            <View
               style={{
-                padding: 22,
-                borderRadius: 20,
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.25)",
-                backgroundColor: "rgba(255,255,255,0.12)",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                marginBottom: 8,
               }}
             >
-              <View style={{ marginBottom: 14 }}>
-                <Text
-                  style={{
-                    color: "rgba(255,255,255,0.65)",
-                    fontSize: 10,
-                    letterSpacing: 2,
-                    textTransform: "uppercase",
-                    marginBottom: 4,
-                  }}
-                >
-                  Balance
-                </Text>
-                <Pressable
-                  onPress={() => setBalanceVisible((v) => !v)}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
-                >
-                  <Text
-                    style={{
-                      color: "#fff",
-                      fontSize: 30,
-                      fontWeight: "800",
-                      letterSpacing: -0.5,
-                    }}
-                    adjustsFontSizeToFit
-                    numberOfLines={1}
-                  >
-                    {formattedBalance}
-                  </Text>
-                  <Ionicons
-                    name={balanceVisible ? "eye-outline" : "eye-off-outline"}
-                    size={17}
-                    color="rgba(255,255,255,0.5)"
-                  />
-                </Pressable>
-              </View>
-
-              <View
+              <Text style={{ fontSize: 14 }}>
+                {CURRENCY_CONFIG[currency as SupportedCurrency]?.flag ?? "🌐"}
+              </Text>
+              <Text
                 style={{
-                  height: 1,
-                  backgroundColor: "rgba(255,255,255,0.15)",
-                  marginBottom: 14,
-                }}
-              />
-
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "flex-end",
+                  color: "rgba(255,255,255,0.5)",
+                  fontSize: 10,
+                  letterSpacing: 2.5,
+                  textTransform: "uppercase",
+                  fontWeight: "600",
                 }}
               >
-                <View>
-                  <Text
+                Total Balance · {currency}
+              </Text>
+            </View>
+
+            {/* Amount row */}
+            <Pressable
+              onPress={() => setBalanceVisible((v) => !v)}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 20,
+              }}
+            >
+              <Text
+                style={{
+                  color: "#fff",
+                  fontSize: 34,
+                  fontWeight: "800",
+                  letterSpacing: -1,
+                }}
+                adjustsFontSizeToFit
+                numberOfLines={1}
+              >
+                {formattedBalance}
+              </Text>
+              <Ionicons
+                name={balanceVisible ? "eye-outline" : "eye-off-outline"}
+                size={18}
+                color="rgba(255,255,255,0.4)"
+              />
+            </Pressable>
+
+            <View
+              style={{
+                height: 1,
+                backgroundColor: "rgba(255,255,255,0.12)",
+                marginBottom: 16,
+              }}
+            />
+
+            {/* Bottom row */}
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <View>
+                <Text
+                  style={{
+                    color: "rgba(255,255,255,0.45)",
+                    fontSize: 9,
+                    letterSpacing: 2,
+                    textTransform: "uppercase",
+                    marginBottom: 3,
+                    fontWeight: "600",
+                  }}
+                >
+                  Available
+                </Text>
+                <Text
+                  style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}
+                >
+                  {formattedBalance}
+                </Text>
+              </View>
+              <View style={{ alignItems: "flex-end", gap: 6 }}>
+                {!loading && accountNumber !== "—" && (
+                  <View
                     style={{
-                      color: "rgba(255,255,255,0.65)",
-                      fontSize: 10,
-                      letterSpacing: 2,
-                      textTransform: "uppercase",
-                      marginBottom: 4,
+                      backgroundColor: "rgba(255,255,255,0.1)",
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: 8,
                     }}
                   >
-                    Available Balance
-                  </Text>
-                  <Text
-                    style={{ color: "#fff", fontSize: 22, fontWeight: "700" }}
-                  >
-                    {formattedBalance}
-                  </Text>
-                </View>
-                <View style={{ alignItems: "flex-end", gap: 5 }}>
-                  {!loading && accountNumber !== "—" && (
                     <Text
                       style={{
-                        color: "rgba(255,255,255,0.55)",
+                        color: "rgba(255,255,255,0.7)",
                         fontSize: 11,
                         fontFamily:
                           Platform.OS === "ios" ? "Courier" : "monospace",
@@ -468,48 +522,49 @@ export default function HomeScreen() {
                     >
                       #{accountNumber}
                     </Text>
-                  )}
+                  </View>
+                )}
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
+                >
                   <View
                     style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 5,
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: isActive ? "#4ade80" : "#f87171",
+                    }}
+                  />
+                  <Text
+                    style={{
+                      color: "rgba(255,255,255,0.55)",
+                      fontSize: 11,
+                      fontWeight: "500",
                     }}
                   >
-                    <View
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: 4,
-                        backgroundColor: isActive ? "#4ade80" : "#f87171",
-                      }}
-                    />
-                    <Text
-                      style={{ color: "rgba(255,255,255,0.6)", fontSize: 11 }}
-                    >
-                      {isActive ? "Active" : "Inactive"}
-                    </Text>
-                  </View>
+                    {isActive ? "Active" : "Inactive"}
+                  </Text>
                 </View>
               </View>
-            </BlurView>
-          </View>
+            </View>
+          </BlurView>
         </LinearGradient>
 
-        {/* Quick Actions Card */}
+        {/* ── Quick Actions ──────────────────────────────────────────────── */}
         <View
           style={{
-            marginTop: -46,
-            marginHorizontal: 16,
+            marginTop: -52,
+            marginHorizontal: 18,
             backgroundColor: "#fff",
-            borderRadius: 20,
-            padding: 18,
-            paddingBottom: 16,
-            shadowColor: "#000",
-            shadowOpacity: 0.08,
-            shadowRadius: 16,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 10,
+            borderRadius: 22,
+            paddingTop: 18,
+            paddingBottom: 20,
+            paddingHorizontal: 18,
+            shadowColor: "#1a1060",
+            shadowOpacity: 0.12,
+            shadowRadius: 20,
+            shadowOffset: { width: 0, height: 6 },
+            elevation: 12,
             zIndex: 10,
           }}
         >
@@ -517,10 +572,10 @@ export default function HomeScreen() {
             style={{
               fontSize: 10,
               fontWeight: "700",
-              letterSpacing: 1.5,
+              letterSpacing: 1.8,
               textTransform: "uppercase",
               color: "#94a3b8",
-              marginBottom: 14,
+              marginBottom: 16,
             }}
           >
             Quick actions
@@ -532,20 +587,24 @@ export default function HomeScreen() {
               <TouchableOpacity
                 key={action.label}
                 onPress={() => router.push(action.path)}
-                activeOpacity={0.75}
-                style={{ alignItems: "center", gap: 7 }}
+                activeOpacity={0.7}
+                style={{ alignItems: "center", gap: 8 }}
               >
                 <View
                   style={{
-                    width: 46,
-                    height: 46,
-                    borderRadius: 14,
+                    width: 50,
+                    height: 50,
+                    borderRadius: 16,
                     backgroundColor: action.iconBg,
                     alignItems: "center",
                     justifyContent: "center",
                   }}
                 >
-                  {/* your icon here */}
+                  <Feather
+                    name={action.icon as any}
+                    size={20}
+                    color={action.iconColor}
+                  />
                 </View>
                 <Text
                   style={{
@@ -562,89 +621,99 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Divider */}
-        <View
-          style={{
-            height: 1,
-            backgroundColor: "#e2e8f0",
-            marginHorizontal: 20,
-            marginBottom: 22,
-          }}
-        />
-
-        {/* ── Latest Transactions ──────────────────────────────────── */}
-        <View style={{ paddingHorizontal: 20 }}>
+        {/* ── Latest Transactions ────────────────────────────────────────── */}
+        <View style={{ paddingHorizontal: 18, marginTop: 26 }}>
+          {/* Section header */}
           <View
             style={{
               flexDirection: "row",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: 16,
+              marginBottom: 14,
             }}
           >
             <Text
               style={{
                 color: "#0f1923",
                 fontWeight: "800",
-                fontSize: 20,
+                fontSize: 18,
                 letterSpacing: -0.3,
               }}
             >
-              Latest transactions
+              Recent
             </Text>
-            <TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push("/(tabs)/payments")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                backgroundColor: "#f0f2f8",
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 20,
+              }}
+            >
               <Text
-                style={{ color: "#e05c97", fontSize: 13, fontWeight: "600" }}
+                style={{ color: "#6a3de8", fontSize: 12, fontWeight: "700" }}
               >
-                View all
+                See all
               </Text>
+              <Feather name="arrow-right" size={12} color="#6a3de8" />
             </TouchableOpacity>
           </View>
 
-          {/* Loading state */}
+          {/* Loading */}
           {loading && (
-            <View style={{ alignItems: "center", paddingVertical: 32 }}>
+            <View style={{ alignItems: "center", paddingVertical: 28 }}>
               <ActivityIndicator size="small" color="#6a3de8" />
-              <Text style={{ color: "#94a3b8", fontSize: 13, marginTop: 10 }}>
-                Loading transactions...
+              <Text style={{ color: "#94a3b8", fontSize: 13, marginTop: 8 }}>
+                Loading...
               </Text>
             </View>
           )}
 
-          {/* Empty state */}
+          {/* Empty */}
           {!loading && transactions.length === 0 && (
             <View
-              style={{ alignItems: "center", paddingVertical: 40, gap: 10 }}
+              style={{
+                alignItems: "center",
+                paddingVertical: 36,
+                gap: 10,
+                backgroundColor: "#fff",
+                borderRadius: 20,
+                paddingHorizontal: 20,
+              }}
             >
               <View
                 style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: 28,
+                  width: 52,
+                  height: 52,
+                  borderRadius: 26,
                   backgroundColor: "#eef2ff",
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Feather name="inbox" size={24} color="#3a6df0" />
+                <Feather name="inbox" size={22} color="#3a6df0" />
               </View>
               <Text
-                style={{ color: "#64748b", fontSize: 14, fontWeight: "600" }}
+                style={{ color: "#374151", fontSize: 14, fontWeight: "700" }}
               >
                 No transactions yet
               </Text>
               <Text
                 style={{ color: "#94a3b8", fontSize: 12, textAlign: "center" }}
               >
-                Your transaction history will appear here
+                Your history will appear here once you make a transaction
               </Text>
             </View>
           )}
 
-          {/* Transaction list */}
-          {!loading && (
+          {/* Show only 2 transactions */}
+          {!loading && transactions.length > 0 && (
             <View style={{ gap: 10 }}>
-              {transactions.slice(0, 10).map((tx) => {
+              {transactions.slice(0, 2).map((tx) => {
                 const meta = getTxMeta(tx, walletId);
                 const incoming = isIncomingTx(tx, walletId);
                 const label = getTxLabel(tx);
@@ -656,56 +725,50 @@ export default function HomeScreen() {
                   tx.currency ?? currency,
                 );
 
-                // Payment method badge (bank, card, ussd, etc.)
-                const methodLabel = tx.paymentMethod
-                  ? tx.paymentMethod.charAt(0).toUpperCase() +
-                    tx.paymentMethod.slice(1)
-                  : null;
-
                 return (
                   <TouchableOpacity
                     key={tx._id ?? tx.id}
                     activeOpacity={0.75}
                     style={{
                       backgroundColor: "#fff",
-                      borderRadius: 16,
+                      borderRadius: 18,
                       paddingHorizontal: 14,
-                      paddingVertical: 13,
+                      paddingVertical: 14,
                       flexDirection: "row",
                       alignItems: "center",
-                      shadowColor: "#000",
-                      shadowOpacity: 0.04,
-                      shadowRadius: 8,
-                      shadowOffset: { width: 0, height: 2 },
-                      elevation: 2,
+                      shadowColor: "#1a1060",
+                      shadowOpacity: 0.05,
+                      shadowRadius: 10,
+                      shadowOffset: { width: 0, height: 3 },
+                      elevation: 3,
                     }}
                   >
                     {/* Icon */}
                     <View
                       style={{
-                        width: 46,
-                        height: 46,
-                        borderRadius: 14,
+                        width: 48,
+                        height: 48,
+                        borderRadius: 15,
                         backgroundColor: meta.iconBg,
                         alignItems: "center",
                         justifyContent: "center",
-                        marginRight: 12,
+                        marginRight: 13,
                       }}
                     >
                       <Feather
                         name={meta.icon as any}
-                        size={19}
+                        size={20}
                         color={meta.iconColor}
                       />
                     </View>
 
-                    {/* Label + date + method */}
+                    {/* Label + date */}
                     <View style={{ flex: 1 }}>
                       <Text
                         style={{
                           color: "#0f1923",
-                          fontWeight: "600",
-                          fontSize: 13,
+                          fontWeight: "700",
+                          fontSize: 13.5,
                           marginBottom: 3,
                         }}
                         numberOfLines={1}
@@ -715,25 +778,14 @@ export default function HomeScreen() {
                       <Text style={{ color: "#94a3b8", fontSize: 11 }}>
                         {date}
                       </Text>
-                      {methodLabel && (
-                        <Text
-                          style={{
-                            color: "#cbd5e1",
-                            fontSize: 10,
-                            marginTop: 2,
-                          }}
-                        >
-                          via {methodLabel}
-                        </Text>
-                      )}
                     </View>
 
-                    {/* Amount + status badge */}
+                    {/* Amount + badge */}
                     <View style={{ alignItems: "flex-end", gap: 5 }}>
                       <Text
                         style={{
-                          fontWeight: "700",
-                          fontSize: 13,
+                          fontWeight: "800",
+                          fontSize: 14,
                           color: incoming ? "#16a34a" : "#0f1923",
                         }}
                       >
@@ -774,10 +826,39 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 );
               })}
+
+              {/* View all footer link */}
+              {transactions.length > 2 && (
+                <TouchableOpacity
+                  onPress={() => router.push("/(tabs)/payments")}
+                  style={{
+                    alignItems: "center",
+                    paddingVertical: 14,
+                    backgroundColor: "#fff",
+                    borderRadius: 18,
+                    marginTop: 2,
+                    borderWidth: 1.5,
+                    borderColor: "#eef2ff",
+                    borderStyle: "dashed",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#6a3de8",
+                      fontSize: 13,
+                      fontWeight: "700",
+                    }}
+                  >
+                    View all {transactions.length} transactions
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
         </View>
       </ScrollView>
+
+      {/* ── PIN Modal ─────────────────────────────────────────────────────── */}
       {pinModalVisible && (
         <View
           style={{
@@ -786,82 +867,71 @@ export default function HomeScreen() {
             left: 0,
             right: 0,
             bottom: 90,
-            backgroundColor: "rgba(0,0,0,0.5)",
+            backgroundColor: "rgba(10,8,40,0.6)",
             justifyContent: "flex-end",
           }}
         >
-          {/* Backdrop */}
           <Pressable
             style={{ flex: 1 }}
             onPress={() => setPinModalVisible(false)}
           />
-
-          {/* Bottom Sheet */}
           <View
             style={{
               backgroundColor: "#fff",
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              padding: 20,
-              paddingBottom: 30,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              padding: 24,
+              paddingBottom: 36,
             }}
           >
-            {/* Handle bar */}
             <View
               style={{
-                width: 50,
+                width: 44,
                 height: 5,
                 backgroundColor: "#e2e8f0",
                 borderRadius: 3,
                 alignSelf: "center",
-                marginBottom: 15,
+                marginBottom: 20,
               }}
             />
-
-            {/* Icon */}
             <View
               style={{
-                width: 60,
-                height: 60,
-                borderRadius: 30,
+                width: 64,
+                height: 64,
+                borderRadius: 32,
                 backgroundColor: "#fff8ec",
                 alignItems: "center",
                 justifyContent: "center",
                 alignSelf: "center",
-                marginBottom: 12,
+                marginBottom: 14,
               }}
             >
-              <Feather name="shield" size={26} color="#f5a623" />
+              <Feather name="shield" size={28} color="#f5a623" />
             </View>
-
-            {/* Title */}
             <Text
               style={{
                 textAlign: "center",
-                fontSize: 18,
+                fontSize: 19,
                 fontWeight: "800",
                 color: "#0f1923",
               }}
             >
               Secure your account
             </Text>
-
-            {/* Subtitle */}
             <Text
               style={{
                 textAlign: "center",
                 fontSize: 13,
                 color: "#64748b",
-                marginTop: 6,
-                marginBottom: 18,
-                paddingHorizontal: 10,
+                marginTop: 7,
+                marginBottom: 22,
+                paddingHorizontal: 12,
+                lineHeight: 19,
               }}
             >
               Set a 4-digit transaction PIN to protect your payments and
-              withdrawals
+              withdrawals.
             </Text>
-
-            {/* Buttons */}
             <TouchableOpacity
               onPress={() => {
                 setPinModalVisible(false);
@@ -869,19 +939,18 @@ export default function HomeScreen() {
               }}
               style={{
                 backgroundColor: "#6a3de8",
-                paddingVertical: 14,
-                borderRadius: 14,
+                paddingVertical: 15,
+                borderRadius: 16,
                 alignItems: "center",
               }}
             >
-              <Text style={{ color: "#fff", fontWeight: "700" }}>
+              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>
                 Set Transaction PIN
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               onPress={() => setPinModalVisible(false)}
-              style={{ marginTop: 12, alignItems: "center" }}
+              style={{ marginTop: 14, alignItems: "center" }}
             >
               <Text style={{ color: "#94a3b8", fontSize: 13 }}>
                 Maybe later

@@ -1,25 +1,26 @@
+import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
 import {
-  View,
-  Text,
+  Platform,
   ScrollView,
   StatusBar,
-  Platform,
+  Text,
   TouchableOpacity,
+  View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
-import TransferTypeSelector, { TransferType } from "./TransferTypeSelector";
 import RecipientStep from "./RecipientStep";
 import TransferDetailsForm from "./TransferDetailsForm";
+import TransferSuccessModal from "./TransferSuccessModal";
+import TransferTypeSelector, { TransferType } from "./TransferTypeSelector";
 
-import { useBeneficiaries, Beneficiary } from "@/hooks/usebene";
-import { useTransfer } from "@/hooks/useTransfer";
-import { AccountLookupResponse, useAccountLookup } from "@/hooks/useacctlookup";
 import { Bank } from "@/constant/bank";
+import { AccountLookupResponse, useAccountLookup } from "@/hooks/useacctlookup";
+import { Beneficiary, useBeneficiaries } from "@/hooks/usebene";
+import { useTransfer } from "@/hooks/useTransfer";
 
 type Step = "type" | "recipient" | "details";
 
@@ -32,6 +33,7 @@ const STEP_TITLE: Record<Step, string> = {
 export default function SendMoneyScreen() {
   const [step, setStep] = useState<Step>("type");
   const [transferType, setTransferType] = useState<TransferType | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   const [selectedBeneficiary, setSelectedBeneficiary] =
     useState<Beneficiary | null>(null);
@@ -58,13 +60,8 @@ export default function SendMoneyScreen() {
     "";
 
   useEffect(() => {
-    if (accountNumber.length !== 10) {
-      return;
-    }
-
-    if (transferType === "external" && !selectedBank?.code) {
-      return;
-    }
+    if (accountNumber.length !== 10) return;
+    if (transferType === "external" && !selectedBank?.code) return;
 
     void lookupAccount({
       accountNumber,
@@ -82,41 +79,32 @@ export default function SendMoneyScreen() {
     setSelectedBeneficiary(null);
     setAccountNumber(onlyDigits(value).slice(0, 10));
   };
+
+  const resetForm = () => {
+    setAmount("");
+    setNote("");
+    setPin("");
+    setAccountNumber("");
+    setSelectedBank(null);
+    setSelectedBeneficiary(null);
+    setTransferType(null);
+    setStep("type");
+  };
+
   const handleTransfer = async () => {
     const parsedAmount = Number(amount);
-
     const externalBankCode = selectedBank?.code;
-
-    console.log("================================");
-    console.log("🚀 TRANSFER START");
-    console.log("Transfer Type:", transferType);
-    console.log("Raw Account Number:", accountNumber);
-    console.log("Selected Bank:", selectedBank);
-    console.log("Amount:", parsedAmount);
-    console.log("Pin:", pin);
-    console.log("Note:", note);
-    console.log("================================");
-
-    // ✅ ALWAYS CLEAN ONCE
     const cleanAccountNumber = onlyDigits(accountNumber).slice(0, 10);
 
-    console.log("🧼 CLEAN ACCOUNT NUMBER:", cleanAccountNumber);
-
-    // ✅ VALIDATION FIRST (USE CLEAN VALUE ONLY)
     if (cleanAccountNumber.length !== 10) {
-      console.log("❌ Invalid account number:", cleanAccountNumber);
       setLookupError("Account number must be exactly 10 digits.");
       return;
     }
-
     if (!parsedAmount || parsedAmount <= 0) {
-      console.log("❌ Invalid amount");
       setLookupError("Amount must be greater than 0.");
       return;
     }
-
     if (transferType === "external" && !externalBankCode) {
-      console.log("❌ Missing external bank code");
       setLookupError("Bank code is required for external transfers.");
       return;
     }
@@ -125,49 +113,39 @@ export default function SendMoneyScreen() {
       let ok = false;
 
       if (transferType === "external") {
-        const payload = {
+        ok = await transfer("external", {
           accountNumber: cleanAccountNumber,
-          bankCode: externalBankCode,
+          bankCode: externalBankCode!,
           amount: parsedAmount,
           transactionPin: pin,
           description: note || undefined,
-        };
-
-        console.log("🌍 EXTERNAL TRANSFER PAYLOAD:", payload);
-
-        ok = await transfer("external", payload);
+        });
       } else {
-        const payload = {
-          accountNumber: cleanAccountNumber,
+        ok = await transfer("internal", {
+          recipientAccount: cleanAccountNumber,
           amount: parsedAmount,
           transactionPin: pin,
           description: note || undefined,
-        };
-
-        console.log("🏦 INTERNAL TRANSFER PAYLOAD:", payload);
-
-        ok = await transfer("internal", payload);
+        });
       }
-
-      console.log("✅ TRANSFER RESULT:", ok);
 
       if (ok) {
-        console.log("🎉 TRANSFER SUCCESS");
-
-        setAmount("");
-        setNote("");
-        setPin("");
-        setAccountNumber("");
-        setSelectedBank(null);
-        setSelectedBeneficiary(null);
-        setTransferType(null);
-        setStep("type");
-      } else {
-        console.log("❌ TRANSFER FAILED");
+        setShowSuccessModal(true);
       }
     } catch (err: any) {
-      console.log("💥 TRANSFER ERROR:", err?.response?.data || err);
+      console.log("Transfer error:", err?.response?.data || err);
     }
+  };
+
+  const handleSuccessDone = () => {
+    setShowSuccessModal(false);
+    resetForm();
+    router.back();
+  };
+
+  const handleSendAnother = () => {
+    setShowSuccessModal(false);
+    resetForm();
   };
 
   const goBack = () => {
@@ -223,7 +201,7 @@ export default function SendMoneyScreen() {
             beneficiaries={beneficiaries}
             loadingBeneficiaries={loadingBeneficiaries}
             selectedBeneficiaryId={selectedBeneficiary?._id ?? null}
-            accountNumber={accountNumber}
+            recipientAccount={accountNumber}
             selectedBank={selectedBank}
             lookupLoading={lookupLoading}
             lookupError={lookupError}
@@ -244,7 +222,7 @@ export default function SendMoneyScreen() {
                 ? "PatchPay"
                 : (selectedBank?.name ?? "Bank")
             }
-            accountNumber={accountNumber}
+            recipientAccount={accountNumber}
             amount={amount}
             note={note}
             pin={pin}
@@ -259,6 +237,23 @@ export default function SendMoneyScreen() {
           />
         )}
       </ScrollView>
+
+      <TransferSuccessModal
+        visible={showSuccessModal}
+        transferType={transferType}
+        recipientName={resolvedRecipientName}
+        bankName={
+          transferType === "internal"
+            ? "PatchPay"
+            : (selectedBank?.name ?? "Bank")
+        }
+        recipientAccount={accountNumber}
+        amount={amount}
+        note={note}
+        success={success}
+        onDone={handleSuccessDone}
+        onSendAnother={handleSendAnother}
+      />
     </View>
   );
 }
@@ -270,26 +265,18 @@ const getLookupText = (
   keys: string[],
 ): string => {
   if (!response) return "";
-
   const direct = findStringValue(response, keys);
   if (direct) return direct;
-
   const data = response.data;
-  if (isRecord(data)) {
-    return findStringValue(data, keys);
-  }
-
+  if (isRecord(data)) return findStringValue(data, keys);
   return "";
 };
 
 const findStringValue = (source: Record<string, unknown>, keys: string[]) => {
   for (const key of keys) {
     const value = source[key];
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
+    if (typeof value === "string" && value.trim()) return value;
   }
-
   return "";
 };
 

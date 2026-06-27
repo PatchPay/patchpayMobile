@@ -1,21 +1,21 @@
+import { invoiceService } from "@/api/invoiceService";
+import { Escrow } from "@/types/escrow";
+import { Invoice } from "@/types/invoice";
+import { Ionicons } from "@expo/vector-icons";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
   ScrollView,
   StatusBar,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  StyleSheet,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
-import { WebView, WebViewNavigation } from "react-native-webview";
 import Toast from "react-native-toast-message";
-import { invoiceService } from "@/api/invoiceService";
-import { Escrow } from "@/types/escrow";
-import { Invoice } from "@/types/invoice";
+import { WebView, WebViewNavigation } from "react-native-webview";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -176,34 +176,47 @@ export default function InvoiceScreen() {
     }
   };
 
-  const handleNavigationStateChange = async (navState: WebViewNavigation) => {
-    const url = navState.url;
+  const handleNavigationStateChange = (navState: WebViewNavigation) => {
+    const { url } = navState;
 
-    console.log("Current WebView URL:", url);
+    console.log("WebView URL:", url);
 
-    // User completed payment and Squad redirected
-    if (
-      currentRef &&
-      (url.includes("success") ||
-        url.includes("successful") ||
-        url.includes("callback"))
-    ) {
+    if (url.includes("/api/invoices/callback")) {
+      let reference = currentRef;
+
+      try {
+        const urlObj = new URL(url);
+
+        reference =
+          urlObj.searchParams.get("reference") ||
+          urlObj.searchParams.get("transaction_ref") ||
+          currentRef;
+      } catch {}
+
       setShowWebView(false);
 
-      await verifyPayment(currentRef);
+      if (reference) {
+        verifyPayment(reference);
+      }
     }
+  };
 
-    if (url.includes("cancel") || url.includes("cancelled")) {
-      setShowWebView(false);
+  const handleCloseWebView = () => {
+    setShowWebView(false);
 
+    if (currentRef) {
       Toast.show({
         type: "info",
-        text1: "Payment Cancelled",
+        text1: "Payment not verified",
+        text2: "Tap Verify Payment if you completed the payment.",
+        visibilityTime: 4000,
       });
     }
   };
 
   const inv = invoice;
+
+  console.log("invoice data:", inv);
 
   console.log("this is the invoice data", inv?.amount);
 
@@ -377,12 +390,45 @@ export default function InvoiceScreen() {
             </View>
 
             {/* ── delivery details ── */}
+
             {inv.rfqId?.delivery_address && (
               <View style={styles.card}>
                 <SectionHeader title="Delivery Details" />
                 <View style={{ gap: 6, marginTop: 12 }}>
                   <InfoRow label="Type" value={inv.rfqId?.delivery_type} />
                   <InfoRow label="Trade" value={inv.rfqId?.trade_type} />
+
+                  <InfoRow
+                    label="Arrival Date"
+                    value={
+                      inv.rfqId?.arrival_date
+                        ? new Date(inv.rfqId.arrival_date).toLocaleDateString(
+                            "en-GB",
+                            {
+                              weekday: "short",
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            },
+                          )
+                        : "—"
+                    }
+                  />
+
+                  <InfoRow
+                    label="Arrival Time"
+                    value={
+                      inv.rfqId?.arrival_time
+                        ? new Date(
+                            `1970-01-01T${inv.rfqId.arrival_time}`,
+                          ).toLocaleTimeString([], {
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })
+                        : "—"
+                    }
+                  />
+
                   <InfoRow
                     label="Street"
                     value={inv.rfqId?.delivery_address?.street}
@@ -403,6 +449,7 @@ export default function InvoiceScreen() {
                     label="Phone"
                     value={inv.rfqId?.delivery_address?.phoneNumber}
                   />
+
                   {inv.rfqId?.delivery_code && (
                     <View style={styles.deliveryCodeBox}>
                       <Ionicons name="lock-closed" size={14} color="#0057b8" />
@@ -511,7 +558,7 @@ export default function InvoiceScreen() {
               Complete Payment
             </Text>
 
-            <TouchableOpacity onPress={() => setShowWebView(false)}>
+            <TouchableOpacity onPress={handleCloseWebView}>
               <Ionicons name="close" size={28} color="#000" />
             </TouchableOpacity>
           </View>
