@@ -475,7 +475,13 @@ export default function InvoiceScreen() {
                 <View style={{ gap: 6, marginTop: 14 }}>
                   <InfoRow
                     label="Escrow ID"
-                    value={escrow?._id ?? inv.escrowId ?? ""}
+                    value={
+                      escrow?._id ??
+                      (typeof inv.escrowId === "string"
+                        ? inv.escrowId
+                        : inv.escrowId?._id) ??
+                      "—"
+                    }
                   />
                   <InfoRow
                     label="Status"

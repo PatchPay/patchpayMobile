@@ -98,7 +98,7 @@ export interface Invoice {
 
   invoice?: string;
 
-  escrowId?: string;
+  escrowId?: Escrow;
 
   createdAt: string;
   updatedAt: string;
