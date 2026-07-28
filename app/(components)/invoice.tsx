@@ -26,12 +26,12 @@ const statusStyles = (status?: string) => {
     status === "funded" ||
     status === "Accepted"
   ) {
-    return { bg: "#e6f4ff", color: "#0057b8", label: status?.toUpperCase() };
+    return { bg: "#DBEAFE", color: "#1D4ED8", label: status?.toUpperCase() };
   }
   if (status === "failed" || status === "cancelled") {
-    return { bg: "#fff1f0", color: "#cf1322", label: status?.toUpperCase() };
+    return { bg: "#FEF2F2", color: "#EF4444", label: status?.toUpperCase() };
   }
-  return { bg: "#fffbe6", color: "#d46b08", label: status?.toUpperCase() };
+  return { bg: "#FFFBEB", color: "#F59E0B", label: status?.toUpperCase() };
 };
 
 const fmt = (n?: number, currency = "GBP") =>
@@ -495,6 +495,24 @@ export default function InvoiceScreen() {
                     )}
                   />
                 </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    const escrowId =
+                      escrow?._id ??
+                      (typeof inv.escrowId === "string"
+                        ? inv.escrowId
+                        : inv.escrowId?._id);
+
+                    if (escrowId) {
+                      router.push(`/escrow`);
+                    }
+                  }}
+                  activeOpacity={0.85}
+                  style={styles.escrowBtn}
+                >
+                  <Text style={styles.escrowBtnText}>Go to Escrow</Text>
+                  <Ionicons name="arrow-forward" size={16} color="#0057b8" />
+                </TouchableOpacity>
               </View>
             )}
 
@@ -829,6 +847,17 @@ const styles = StyleSheet.create({
   },
   escrowTitle: { fontSize: 15, fontWeight: "900", color: "#0057b8" },
   escrowSub: { fontSize: 12, color: "#7a8fad", lineHeight: 18 },
+  escrowBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,87,184,0.06)",
+  },
+  escrowBtnText: { color: "#0057b8", fontWeight: "700", fontSize: 14 },
 
   // pay button
   payBtn: {

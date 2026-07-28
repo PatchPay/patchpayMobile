@@ -18,12 +18,12 @@ import {
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
-  bg: "#EFF6FF",
+  bg: "#F8FAFC",
   surface: "#FFFFFF",
-  primary: "#3B82F6",
-  primaryDark: "#2563EB",
-  accent: "#8B5CF6",
-  accentLight: "#EDE9FE",
+  primary: "#1D4ED8",
+  primaryDark: "#0B1F3A",
+  accent: "#3B82F6",
+  accentLight: "#DBEAFE",
   navy: "#0F172A",
   muted: "#64748B",
   subtle: "#CBD5E1",
@@ -39,7 +39,7 @@ const T = {
   blueBorder: "#BFDBFE",
   slate: "#94A3B8",
   slateBg: "#F8FAFC",
-  shadow: "#1E40AF",
+  shadow: "#0F172A",
 } as const;
 
 // ── Currency config ───────────────────────────────────────────────────────────
