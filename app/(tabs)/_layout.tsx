@@ -11,21 +11,21 @@ export default function TabsLayout() {
 
         tabBarStyle: {
           position: "absolute",
-          backgroundColor: "#fff",
+          backgroundColor: "#FFFFFF",
           borderTopWidth: 1,
-          borderTopColor: "#f1f5f9",
-          height: 96,
+          borderTopColor: "#E2E8F0",
+          height: 88,
           paddingBottom: 12,
           paddingTop: 10,
-          shadowColor: "#000",
+          shadowColor: "#0F172A",
           shadowOpacity: 0.06,
           shadowRadius: 12,
           shadowOffset: { width: 0, height: -4 },
           elevation: 12,
         },
 
-        tabBarActiveTintColor: "#1a3fb5",
-        tabBarInactiveTintColor: "#cbd5e1",
+        tabBarActiveTintColor: "#1D4ED8",
+        tabBarInactiveTintColor: "#64748B",
 
         tabBarLabelStyle: {
           fontSize: 10,
@@ -53,7 +53,7 @@ export default function TabsLayout() {
                     width: 28,
                     height: 3,
                     borderRadius: 2,
-                    backgroundColor: "#1a3fb5",
+                    backgroundColor: "#1D4ED8",
                   }}
                 />
               )}
@@ -89,7 +89,7 @@ export default function TabsLayout() {
                     width: 28,
                     height: 3,
                     borderRadius: 2,
-                    backgroundColor: "#1a3fb5",
+                    backgroundColor: "#1D4ED8",
                   }}
                 />
               )}
@@ -125,7 +125,7 @@ export default function TabsLayout() {
                     width: 28,
                     height: 3,
                     borderRadius: 2,
-                    backgroundColor: "#1a3fb5",
+                    backgroundColor: "#1D4ED8",
                   }}
                 />
               )}
@@ -161,7 +161,7 @@ export default function TabsLayout() {
                     width: 28,
                     height: 3,
                     borderRadius: 2,
-                    backgroundColor: "#1a3fb5",
+                    backgroundColor: "#1D4ED8",
                   }}
                 />
               )}

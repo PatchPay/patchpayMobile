@@ -98,7 +98,7 @@ export default function ProfileScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#2563eb" />
 
       {/* ── Header curve ──────────────────────────────────────────────── */}
-      <View className="bg-blue-600 pt-14 pb-20 px-6 rounded-b-[40px]">
+      <View className="bg-brand pt-14 pb-20 px-6 rounded-b-lg">
         <View className="flex-row justify-between items-center mb-6">
           <Text className="text-white text-xl font-bold tracking-tight">
             My Profile
@@ -151,7 +151,7 @@ export default function ProfileScreen() {
       >
         {/* ── Status pill ───────────────────────────────────────────────── */}
         <View className="flex-row justify-center mb-5">
-          <View className="bg-white rounded-2xl shadow-sm shadow-slate-200 px-6 py-3 flex-row gap-6">
+          <View className="bg-surface-card rounded-md border border-surface-border shadow-card px-6 py-3 flex-row gap-6">
             <View className="items-center">
               <View className="flex-row items-center gap-1 mb-0.5">
                 <View className="w-1.5 h-1.5 rounded-full bg-sky-400" />
@@ -189,7 +189,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Personal Info ─────────────────────────────────────────────── */}
-        <View className="bg-white rounded-2xl border border-slate-100 shadow-sm shadow-slate-100 px-5 mb-4">
+        <View className="bg-surface-card rounded-md border border-surface-border shadow-card px-5 mb-4">
           <Text className="text-slate-800 font-bold text-sm pt-4 pb-2">
             Personal Information
           </Text>
@@ -204,7 +204,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Contact Info ──────────────────────────────────────────────── */}
-        <View className="bg-white rounded-2xl border border-slate-100 shadow-sm shadow-slate-100 px-5 mb-4">
+        <View className="bg-surface-card rounded-md border border-surface-border shadow-card px-5 mb-4">
           <Text className="text-slate-800 font-bold text-sm pt-4 pb-2">
             Contact Details
           </Text>
@@ -217,7 +217,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Location ──────────────────────────────────────────────────── */}
-        <View className="bg-white rounded-2xl border border-slate-100 shadow-sm shadow-slate-100 px-5 mb-6">
+        <View className="bg-surface-card rounded-md border border-surface-border shadow-card px-5 mb-6">
           <Text className="text-slate-800 font-bold text-sm pt-4 pb-2">
             Location
           </Text>
@@ -226,7 +226,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Edit profile button ───────────────────────────────────────── */}
-        <TouchableOpacity className="bg-blue-600 rounded-2xl py-4 items-center flex-row justify-center gap-2">
+        <TouchableOpacity className="bg-brand rounded-md py-4 items-center flex-row justify-center gap-2">
           <Feather name="edit-2" size={15} color="#fff" />
           <Text className="text-white font-bold text-sm">Edit Profile</Text>
         </TouchableOpacity>

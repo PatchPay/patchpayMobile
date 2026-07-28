@@ -267,7 +267,7 @@ export default function HomeScreen() {
     hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#f0f2f8" }}>
+    <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
       <StatusBar
         barStyle="light-content"
         backgroundColor="transparent"
@@ -284,8 +284,8 @@ export default function HomeScreen() {
       >
         {/* ── Hero gradient ──────────────────────────────────────────────── */}
         <LinearGradient
-          colors={["#0d0a2e", "#1a1060", "#2541c4", "#6a3de8"]}
-          locations={[0, 0.3, 0.65, 1]}
+          colors={["#0B1F3A", "#102E55", "#1D4ED8", "#3B82F6"]}
+          locations={[0, 0.35, 0.72, 1]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={{
@@ -560,7 +560,7 @@ export default function HomeScreen() {
             paddingTop: 18,
             paddingBottom: 20,
             paddingHorizontal: 18,
-            shadowColor: "#1a1060",
+            shadowColor: "#0B1F3A",
             shadowOpacity: 0.12,
             shadowRadius: 20,
             shadowOffset: { width: 0, height: 6 },
@@ -648,25 +648,25 @@ export default function HomeScreen() {
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 4,
-                backgroundColor: "#f0f2f8",
+                backgroundColor: "#F8FAFC",
                 paddingHorizontal: 12,
                 paddingVertical: 6,
                 borderRadius: 20,
               }}
             >
               <Text
-                style={{ color: "#6a3de8", fontSize: 12, fontWeight: "700" }}
+                style={{ color: "#1D4ED8", fontSize: 12, fontWeight: "700" }}
               >
                 See all
               </Text>
-              <Feather name="arrow-right" size={12} color="#6a3de8" />
+              <Feather name="arrow-right" size={12} color="#1D4ED8" />
             </TouchableOpacity>
           </View>
 
           {/* Loading */}
           {loading && (
             <View style={{ alignItems: "center", paddingVertical: 28 }}>
-              <ActivityIndicator size="small" color="#6a3de8" />
+              <ActivityIndicator size="small" color="#1D4ED8" />
               <Text style={{ color: "#94a3b8", fontSize: 13, marginTop: 8 }}>
                 Loading...
               </Text>
@@ -736,7 +736,7 @@ export default function HomeScreen() {
                       paddingVertical: 14,
                       flexDirection: "row",
                       alignItems: "center",
-                      shadowColor: "#1a1060",
+                      shadowColor: "#0B1F3A",
                       shadowOpacity: 0.05,
                       shadowRadius: 10,
                       shadowOffset: { width: 0, height: 3 },
@@ -844,7 +844,7 @@ export default function HomeScreen() {
                 >
                   <Text
                     style={{
-                      color: "#6a3de8",
+                      color: "#1D4ED8",
                       fontSize: 13,
                       fontWeight: "700",
                     }}
@@ -938,7 +938,7 @@ export default function HomeScreen() {
                 router.push("/(components)/settransactionpin");
               }}
               style={{
-                backgroundColor: "#6a3de8",
+                backgroundColor: "#0B1F3A",
                 paddingVertical: 15,
                 borderRadius: 16,
                 alignItems: "center",

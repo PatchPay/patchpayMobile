@@ -92,10 +92,10 @@ const EscrowDetailsScreen = () => {
     : escrow?.creatorId?.firstName || escrow?.creatorId?.companyName || "Buyer";
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-100">
+    <SafeAreaView className="flex-1 bg-surface">
       <ScrollView>
         {/* Header */}
-        <View className="bg-indigo-700 px-5 pt-10 pb-8 rounded-b-3xl">
+        <View className="bg-brand px-5 pt-10 pb-8 rounded-b-lg">
           <View className="flex-row items-center">
             <View className="bg-white/20 p-3 rounded-full">
               <ShieldCheck color="white" size={22} />
@@ -110,7 +110,7 @@ const EscrowDetailsScreen = () => {
 
             <View
               className={`ml-auto px-3 py-1 rounded-full ${
-                escrow.status === "FUNDED" ? "bg-green-500" : "bg-gray-400"
+                escrow.status === "FUNDED" ? "bg-success" : "bg-ink-muted"
               }`}
             >
               <Text className="text-white text-xs">{escrow.status}</Text>
@@ -129,7 +129,7 @@ const EscrowDetailsScreen = () => {
 
         <View className="p-5 space-y-4">
           {/* Order Card — shared, but labels differ */}
-          <View className="bg-white rounded-2xl p-5">
+          <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card">
             <Text className="text-gray-400 text-xs uppercase mb-3">
               Order Summary
             </Text>
@@ -146,8 +146,8 @@ const EscrowDetailsScreen = () => {
           {/* CREATOR (buyer) view */}
           {isCreator && (
             <>
-              <View className="bg-green-100 rounded-2xl p-4 flex-row items-center">
-                <View className="bg-green-500 p-3 rounded-full">
+              <View className="bg-green-50 rounded-md p-4 flex-row items-center">
+                <View className="bg-success p-3 rounded-full">
                   <Lock size={20} color="white" />
                 </View>
                 <View className="ml-3 flex-1">
@@ -160,7 +160,7 @@ const EscrowDetailsScreen = () => {
                 </View>
               </View>
 
-              <View className="bg-white rounded-2xl p-5">
+              <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card">
                 <Text className="text-gray-400 text-xs uppercase mb-4">
                   Progress
                 </Text>
@@ -192,7 +192,7 @@ const EscrowDetailsScreen = () => {
               <TouchableOpacity
                 disabled={escrow.status !== "FUNDED"}
                 className={`rounded-2xl py-4 items-center mt-3 ${
-                  escrow.status === "FUNDED" ? "bg-indigo-600" : "bg-gray-300"
+                  escrow.status === "FUNDED" ? "bg-brand" : "bg-slate-300"
                 }`}
               >
                 <View className="flex-row items-center">
@@ -208,8 +208,8 @@ const EscrowDetailsScreen = () => {
           {/* RECIPIENT (seller) view */}
           {!isCreator && (
             <>
-              <View className="bg-indigo-100 rounded-2xl p-4 flex-row items-center">
-                <View className="bg-indigo-500 p-3 rounded-full">
+              <View className="bg-blue-100 rounded-md p-4 flex-row items-center">
+                <View className="bg-brand-light p-3 rounded-full">
                   <Wallet size={20} color="white" />
                 </View>
                 <View className="ml-3 flex-1">
@@ -223,7 +223,7 @@ const EscrowDetailsScreen = () => {
                 </View>
               </View>
 
-              <View className="bg-white rounded-2xl p-5">
+              <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card">
                 <Text className="text-gray-400 text-xs uppercase mb-4">
                   Progress
                 </Text>
@@ -257,7 +257,7 @@ const EscrowDetailsScreen = () => {
               <TouchableOpacity
                 disabled={escrow.status !== "FUNDED"}
                 className={`rounded-2xl py-4 items-center mt-3 ${
-                  escrow.status === "FUNDED" ? "bg-green-600" : "bg-gray-300"
+                  escrow.status === "FUNDED" ? "bg-success" : "bg-slate-300"
                 }`}
               >
                 <View className="flex-row items-center">

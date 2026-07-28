@@ -49,9 +49,9 @@ const getCardBrand = (num: string) => {
 
 // ── card gradients ────────────────────────────────────────────────────────────
 const CARD_GRADIENTS = [
-  "bg-blue-600",
+  "bg-brand",
   "bg-sky-600",
-  "bg-indigo-600",
+  "bg-brand-light",
   "bg-blue-800",
 ];
 
@@ -242,7 +242,7 @@ export default function CardScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#2563eb" />
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <View className="bg-blue-600 pt-14 pb-6 px-6 rounded-b-[32px]">
+      <View className="bg-brand pt-14 pb-6 px-6 rounded-b-lg">
         <View className="flex-row justify-between items-center mb-1">
           <Text className="text-white text-xl font-bold">My Cards</Text>
           <TouchableOpacity
@@ -385,7 +385,7 @@ export default function CardScreen() {
       >
         <View className="flex-1 bg-white">
           {/* Modal header */}
-          <View className="bg-blue-600 pt-12 pb-5 px-6 flex-row justify-between items-center rounded-b-3xl">
+          <View className="bg-brand pt-12 pb-5 px-6 flex-row justify-between items-center rounded-b-lg">
             <Text className="text-white text-lg font-bold">
               {editTarget ? "Edit Card" : "Add New Card"}
             </Text>
@@ -398,7 +398,7 @@ export default function CardScreen() {
           </View>
 
           {/* Preview mini card */}
-          <View className="mx-6 mt-6 bg-blue-600 rounded-2xl p-5 mb-6">
+          <View className="mx-6 mt-6 bg-brand rounded-md p-5 mb-6 shadow-card">
             <Text className="text-white font-mono text-base tracking-widest mb-3">
               {form.card_number
                 ? maskCardNumber(form.card_number)
@@ -483,7 +483,7 @@ export default function CardScreen() {
             <TouchableOpacity
               onPress={handleSave}
               disabled={saving}
-              className="bg-blue-600 rounded-2xl py-4 items-center mt-2 mb-8"
+              className="bg-brand rounded-md py-4 items-center mt-2 mb-8"
             >
               {saving ? (
                 <ActivityIndicator color="#fff" />

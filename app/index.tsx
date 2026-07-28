@@ -11,11 +11,13 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width, height } = Dimensions.get("window");
 
 export default function Splash() {
   const [phase, setPhase] = useState(0);
+  const [destination, setDestination] = useState<"auth/onboarding" | "(tabs)/home" | null>(null);
 
   // Core animations
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -138,6 +140,17 @@ export default function Splash() {
   };
 
   useEffect(() => {
+    AsyncStorage.getItem("token").then((token) => {
+      setDestination(token ? "(tabs)/home" : "auth/onboarding");
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!destination) return;
+    if (destination === "(tabs)/home") {
+      router.replace("/(tabs)/home");
+      return;
+    }
     // Phase 1 – rings burst
     setTimeout(() => {
       setPhase(1);
@@ -257,11 +270,11 @@ export default function Splash() {
     }, 1900);
 
     const timeout = setTimeout(() => {
-      router.replace("/auth/onboarding");
+      router.replace(`/${destination}` as any);
     }, 4000);
 
     return () => clearTimeout(timeout);
-  }, []);
+  }, [destination]);
 
   const ringSize = width * 0.85;
 

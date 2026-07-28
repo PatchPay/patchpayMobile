@@ -215,7 +215,7 @@ export const withdrawStyles = StyleSheet.create({
   ctaButton: {
     borderRadius: 16,
     overflow: "hidden",
-    marginBottom: 12,
+    marginBottom: 20,
     shadowColor: "#2541c4",
     shadowOpacity: 0.3,
     shadowRadius: 12,
