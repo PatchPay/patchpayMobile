@@ -1,3 +1,4 @@
+import { useNavigation } from "@react-navigation/native"; // adjust if using a different router (e.g. expo-router's useRouter)
 import React, { useEffect, useState } from "react";
 import {
   SafeAreaView,
@@ -10,6 +11,7 @@ import {
 import { getMyEscrow } from "@/api/escrowapi";
 import { useAuth } from "@/hooks/useAuth"; // adjust to wherever you store the logged-in user
 import {
+  ArrowLeft,
   CheckCircle,
   Clock,
   FileText,
@@ -42,7 +44,8 @@ const formatDate = (iso: string) => {
 };
 
 const EscrowDetailsScreen = () => {
-  const { user } = useAuth(); // expects user._id
+  const { user } = useAuth(); // expects user.id
+  const navigation = useNavigation();
   const [escrow, setEscrow] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -55,6 +58,7 @@ const EscrowDetailsScreen = () => {
           const active = result.find((e: any) => e.status === "FUNDED");
           setEscrow(active || result[0]);
         }
+        console.log("Escrow loaded:", result);
       } catch (err) {
         console.log(err);
       } finally {
@@ -76,6 +80,13 @@ const EscrowDetailsScreen = () => {
   if (!escrow) {
     return (
       <SafeAreaView className="flex-1 bg-gray-100 items-center justify-center px-6">
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          className="absolute top-10 left-5 p-2"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <ArrowLeft size={22} color="#374151" />
+        </TouchableOpacity>
         <ShieldCheck color="#9ca3af" size={32} />
         <Text className="text-gray-500 mt-3 text-center">
           You don&rsquo;t have any escrow transactions yet.
@@ -84,7 +95,7 @@ const EscrowDetailsScreen = () => {
     );
   }
 
-  const isCreator = escrow?.creatorId?._id === user?._id;
+  const isCreator = escrow?.creatorId?.id === user?.id;
   const counterpartyName = isCreator
     ? escrow?.recipientId?.firstName ||
       escrow?.recipientId?.companyName ||
@@ -97,6 +108,14 @@ const EscrowDetailsScreen = () => {
         {/* Header */}
         <View className="bg-brand px-5 pt-10 pb-8 rounded-b-lg">
           <View className="flex-row items-center">
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              className="mr-3 p-1 -ml-1"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ArrowLeft color="white" size={22} />
+            </TouchableOpacity>
+
             <View className="bg-white/20 p-3 rounded-full">
               <ShieldCheck color="white" size={22} />
             </View>

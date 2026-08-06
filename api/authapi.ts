@@ -1,12 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { jwtDecode } from "jwt-decode";
 import API from "./axiosInstance";
-
-type JwtPayload = {
-  id?: string;
-  userId?: string;
-  _id?: string;
-};
 
 export const registerUser = async (data: any) => {
   const res = await API.post("/users/register", data);
@@ -28,15 +21,21 @@ export const getUser = async () => {
 };
 
 export const getCurrentUserId = async () => {
-  const token =
-    (await AsyncStorage.getItem("token")) ||
-    (await AsyncStorage.getItem("authToken"));
+  const user = await getUser();
+  return user.id;
+};
 
-  if (!token) return null;
+export const forgotPassword = async (email: string) => {
+  const { data } = await API.post(`/users/forget-password`, { email });
+  return data;
+};
 
-  const decoded = jwtDecode<JwtPayload>(token);
-
-  console.log("Decoded JWT:", decoded);
-
-  return decoded.userId || decoded.id || decoded._id || null;
+export const resetPassword = async (payload: {
+  email: string;
+  otp: string;
+  password: string;
+  confirmPassword: string;
+}) => {
+  const { data } = await API.post(`/users/reset-password`, payload);
+  return data;
 };

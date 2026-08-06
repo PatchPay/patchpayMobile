@@ -1,10 +1,10 @@
 import {
-  Modal,
-  View,
-  Text,
-  TouchableOpacity,
-  TextInput,
   ActivityIndicator,
+  Modal,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { Feather } from "@expo/vector-icons";
@@ -42,10 +42,19 @@ export default function RecipientModal({
       const data = await apiFetch(
         `/users/search?query=${encodeURIComponent(query)}&searchType=${searchType}`,
       );
+      console.log("RAW SEARCH RESPONSE");
+      console.log(JSON.stringify(data, null, 2));
+
       setResult(data.data);
       console.log("this the user", data.data);
     } catch (e: any) {
-      setError(e.message ?? "User not found");
+      const message =
+        e.response?.data?.message ||
+        e.response?.data?.error ||
+        e.message;
+
+      setError(message || "An error occurred while searching for the user.");
+      console.log("❌ ERROR searching for user:", message);
     } finally {
       setLoading(false);
     }

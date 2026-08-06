@@ -170,7 +170,7 @@ export default function RFQScreen() {
       const totalAmount = subtotal + transactionCharges;
 
       await rfqService.createRFQ({
-        recipientId: recipient._id,
+        recipientId: recipient?.id,
         product_description: productDescription,
         product_quantity: totalQty,
         amount: numAmount,
@@ -229,16 +229,19 @@ export default function RFQScreen() {
 
       setTab("my");
     } catch (e: any) {
+      console.log("========== RFQ ERROR ==========");
+      console.log("Status:", e?.response?.status);
+      console.log("Response:", JSON.stringify(e?.response?.data, null, 2));
+
       const message = e?.response?.data?.message || e.message;
 
       Toast.show({
-        type: "error", // "success" | "error" | "info"
+        type: "error",
         text1: "Error",
         text2: message,
-        position: "top", // "top" | "bottom"
+        position: "top",
         visibilityTime: 3000,
       });
-      console.log("error message", message);
     } finally {
       setSubmitting(false);
     }
@@ -1013,7 +1016,7 @@ export default function RFQScreen() {
             ) : (
               quotes.map((q) => (
                 <QuoteCard
-                  key={q._id}
+                  key={q.id}
                   quote={q}
                   currentUserId={currentUserId}
                   onAction={fetchQuotes}

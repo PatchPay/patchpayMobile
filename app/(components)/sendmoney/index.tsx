@@ -1,12 +1,12 @@
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
 import {
-  Platform,
-  ScrollView,
-  StatusBar,
-  Text,
-  TouchableOpacity,
-  View,
+    Platform,
+    ScrollView,
+    StatusBar,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -200,7 +200,7 @@ export default function SendMoneyScreen() {
             type={transferType}
             beneficiaries={beneficiaries}
             loadingBeneficiaries={loadingBeneficiaries}
-            selectedBeneficiaryId={selectedBeneficiary?._id ?? null}
+            selectedBeneficiaryId={selectedBeneficiary?.id ?? null}
             recipientAccount={accountNumber}
             selectedBank={selectedBank}
             lookupLoading={lookupLoading}
