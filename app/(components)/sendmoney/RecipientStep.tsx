@@ -2,12 +2,12 @@ import { Bank } from "@/constant/bank";
 import { AccountLookupResponse } from "@/hooks/useacctlookup";
 import { Beneficiary } from "@/hooks/usebene";
 import {
-  ActivityIndicator,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import BankPicker from "./bankpicker"; // see below
 import { TransferType } from "./TransferTypeSelector";
@@ -68,11 +68,11 @@ export default function RecipientStep({
       ) : (
         beneficiaries.map((b) => (
           <TouchableOpacity
-            key={b._id}
+            key={b.id}
             onPress={() => onSelectBeneficiary(b)}
             style={[
               styles.beneCard,
-              selectedBeneficiaryId === b._id && styles.beneCardActive,
+              selectedBeneficiaryId === b.id && styles.beneCardActive,
             ]}
           >
             <View style={styles.avatar}>

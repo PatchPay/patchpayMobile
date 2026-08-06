@@ -1,17 +1,17 @@
-import { useState, useRef, useEffect } from "react";
+import { router } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  Pressable,
   ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
-import { router } from "expo-router";
 import { useRegister } from "./registercontext";
 
 // ── Replace with your real API call ──────────────────────────────────────────
@@ -23,7 +23,7 @@ async function verifyOtp(
   console.log("📤 Sending OTP request:", { email, otp, countryCode });
 
   const res = await fetch(
-    "https://patchpaybackend.onrender.com/api/users/verify-email",
+    "https://api.191.218.161.153.nip.io/api/users/verify-email",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -46,7 +46,7 @@ async function resendOtp(email: string): Promise<void> {
   console.log("📤 Resending OTP:", email);
 
   const res = await fetch(
-    "https://patchpaybackend.onrender.com/api/users/resend-otp",
+    "https://api.191.218.161.153.nip.io/api/users/resend-otp",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

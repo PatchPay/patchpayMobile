@@ -1,23 +1,26 @@
 /* eslint-disable react-hooks/exhaustive-deps */
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
+import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  Image,
   Animated,
-  StyleSheet,
   Dimensions,
   Easing,
+  Image,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
-import { router } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width, height } = Dimensions.get("window");
 
 export default function Splash() {
   const [phase, setPhase] = useState(0);
-  const [destination, setDestination] = useState<"auth/onboarding" | "(tabs)/home" | null>(null);
+  const [destination, setDestination] = useState<
+    "auth/onboarding" | "auth/login" | "(tabs)/home" | null
+  >(null);
+  console.log("this is the destination", destination);
 
   // Core animations
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -140,9 +143,17 @@ export default function Splash() {
   };
 
   useEffect(() => {
-    AsyncStorage.getItem("token").then((token) => {
-      setDestination(token ? "(tabs)/home" : "auth/onboarding");
-    });
+    const checkAppState = async () => {
+      const hasSeenOnboarding = await AsyncStorage.getItem("hasSeenOnboarding");
+
+      if (!hasSeenOnboarding) {
+        setDestination("auth/onboarding");
+      } else {
+        setDestination("auth/login");
+      }
+    };
+
+    checkAppState();
   }, []);
 
   useEffect(() => {

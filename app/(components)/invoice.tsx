@@ -20,21 +20,23 @@ import { WebView, WebViewNavigation } from "react-native-webview";
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 const statusStyles = (status?: string) => {
+  const s = status?.toLowerCase();
   if (
-    status === "paid" ||
-    status === "active" ||
-    status === "funded" ||
-    status === "Accepted"
+    s === "paid" ||
+    s === "active" ||
+    s === "funded" ||
+    s === "accepted" ||
+    s === "success"
   ) {
     return { bg: "#DBEAFE", color: "#1D4ED8", label: status?.toUpperCase() };
   }
-  if (status === "failed" || status === "cancelled") {
+  if (s === "failed" || s === "cancelled" || s === "rejected") {
     return { bg: "#FEF2F2", color: "#EF4444", label: status?.toUpperCase() };
   }
   return { bg: "#FFFBEB", color: "#F59E0B", label: status?.toUpperCase() };
 };
 
-const fmt = (n?: number, currency = "GBP") =>
+const fmt = (n?: number, currency = "NGN") =>
   new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(
     n ?? 0,
   );
@@ -61,11 +63,17 @@ function Divider() {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | number | null;
+}) {
   return (
     <View style={styles.infoRow}>
       <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value}</Text>
+      <Text style={styles.infoValue}>{value ?? "—"}</Text>
     </View>
   );
 }
@@ -215,6 +223,8 @@ export default function InvoiceScreen() {
   };
 
   const inv = invoice;
+  // The RFQ payload is nested under `rfq` (not `rfqId` — that field is just the numeric id)
+  const rfq = (inv as any)?.rfq;
 
   console.log("invoice data:", inv);
 
@@ -236,10 +246,10 @@ export default function InvoiceScreen() {
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.topTitle}>Invoice</Text>
           <Text style={styles.topSub}>
-            Quote #{inv?.rfqId?.quote_number ?? "—"}
+            Quote #{rfq?.quote_number ?? inv?.metadata?.quoteNumber ?? "—"}
           </Text>
         </View>
-        {inv && <StatusBadge status={inv.status} />}
+        {inv && <StatusBadge status={inv.paymentStatus ?? inv.status} />}
       </View>
 
       <ScrollView
@@ -276,7 +286,9 @@ export default function InvoiceScreen() {
               <View style={styles.cardHeader}>
                 <View>
                   <Text style={styles.cardHeaderLabel}>INVOICE</Text>
-                  <Text style={styles.cardHeaderId}>#{inv.rfqId?.uprn}</Text>
+                  <Text style={styles.cardHeaderId}>
+                    #{rfq?.uprn ?? inv.id}
+                  </Text>
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={styles.cardHeaderLabel}>DATE ISSUED</Text>
@@ -295,13 +307,12 @@ export default function InvoiceScreen() {
                 <View style={styles.party}>
                   <Text style={styles.partyRole}>FROM</Text>
                   <Text style={styles.partyName}>
-                    {inv.rfqId?.user?.firstName?.trim()}
+                    {`${rfq?.user_data?.firstName ?? ""} ${
+                      rfq?.user_data?.surname ?? ""
+                    }`.trim() || "—"}
                   </Text>
                   <Text style={styles.partyDetail}>
-                    {inv.rfqId?.user?.email}
-                  </Text>
-                  <Text style={styles.partyDetail}>
-                    {inv.rfqId?.user?.phoneNumber}
+                    {rfq?.user_data?.phoneNumber ?? "—"}
                   </Text>
                 </View>
                 <View style={styles.partyArrow}>
@@ -312,13 +323,12 @@ export default function InvoiceScreen() {
                     BILL TO
                   </Text>
                   <Text style={styles.partyName}>
-                    {inv.rfqId?.destinatary_user?.firstName}
+                    {`${rfq?.destinatary_user?.firstName ?? ""} ${
+                      rfq?.destinatary_user?.surname ?? ""
+                    }`.trim() || "—"}
                   </Text>
                   <Text style={styles.partyDetail}>
-                    {inv.rfqId?.destinatary_user?.email}
-                  </Text>
-                  <Text style={styles.partyDetail}>
-                    {inv.rfqId?.destinatary_user?.phoneNumber}
+                    {rfq?.destinatary_user?.phoneNumber ?? "—"}
                   </Text>
                 </View>
               </View>
@@ -338,10 +348,10 @@ export default function InvoiceScreen() {
 
               <View style={styles.lineItem}>
                 <Text style={[styles.lineItemText, { flex: 3 }]}>
-                  {inv.rfqId?.product_description}
+                  {rfq?.product_description ?? inv.description}
                 </Text>
                 <Text style={[styles.lineItemText, { textAlign: "center" }]}>
-                  {inv.rfqId?.product_quantity}
+                  {rfq?.product_quantity ?? inv.metadata?.productQuantity}
                 </Text>
                 <Text
                   style={[
@@ -349,7 +359,7 @@ export default function InvoiceScreen() {
                     { textAlign: "right", flex: 2, fontWeight: "700" },
                   ]}
                 >
-                  {fmt(inv.rfqId?.subtotal, inv.currency)}
+                  {fmt(rfq?.subtotal ?? inv.amount, inv.currency)}
                 </Text>
               </View>
 
@@ -359,24 +369,24 @@ export default function InvoiceScreen() {
               <View style={styles.totalsBlock}>
                 <InfoRow
                   label="Subtotal"
-                  value={fmt(inv.rfqId?.subtotal, inv.currency)}
+                  value={fmt(rfq?.subtotal ?? inv.amount, inv.currency)}
                 />
                 <InfoRow
                   label="Delivery"
                   value={
-                    inv.rfqId?.delivery_charge
-                      ? fmt(inv.rfqId?.delivery_charge, inv.currency)
+                    rfq?.delivery_charge
+                      ? fmt(rfq?.delivery_charge, inv.currency)
                       : "Free"
                   }
                 />
                 <InfoRow
-                  label={`Transaction Charges`}
-                  value={fmt(inv.rfqId?.transaction_charges, inv.currency)}
+                  label="Transaction Charges"
+                  value={fmt(rfq?.transaction_charges, inv.currency)}
                 />
-                {inv.rfqId?.exchange_rate && inv.rfqId?.exchange_rate !== 1 && (
+                {rfq?.exchange_rate && rfq?.exchange_rate !== 1 && (
                   <InfoRow
                     label="Exchange Rate"
-                    value={`×${inv.rfqId?.exchange_rate}`}
+                    value={`×${rfq?.exchange_rate}`}
                   />
                 )}
               </View>
@@ -384,25 +394,25 @@ export default function InvoiceScreen() {
               <View style={styles.totalBand}>
                 <Text style={styles.totalLabel}>TOTAL DUE</Text>
                 <Text style={styles.totalAmount}>
-                  {fmt(inv.rfqId?.total, inv.currency)}
+                  {fmt(rfq?.total ?? inv.amount, inv.currency)}
                 </Text>
               </View>
             </View>
 
             {/* ── delivery details ── */}
 
-            {inv.rfqId?.delivery_address && (
+            {rfq?.delivery_address && (
               <View style={styles.card}>
                 <SectionHeader title="Delivery Details" />
                 <View style={{ gap: 6, marginTop: 12 }}>
-                  <InfoRow label="Type" value={inv.rfqId?.delivery_type} />
-                  <InfoRow label="Trade" value={inv.rfqId?.trade_type} />
+                  <InfoRow label="Type" value={rfq?.delivery_type} />
+                  <InfoRow label="Trade" value={rfq?.trade_type} />
 
                   <InfoRow
                     label="Arrival Date"
                     value={
-                      inv.rfqId?.arrival_date
-                        ? new Date(inv.rfqId.arrival_date).toLocaleDateString(
+                      rfq?.arrival_date
+                        ? new Date(rfq.arrival_date).toLocaleDateString(
                             "en-GB",
                             {
                               weekday: "short",
@@ -418,9 +428,9 @@ export default function InvoiceScreen() {
                   <InfoRow
                     label="Arrival Time"
                     value={
-                      inv.rfqId?.arrival_time
+                      rfq?.arrival_time
                         ? new Date(
-                            `1970-01-01T${inv.rfqId.arrival_time}`,
+                            `1970-01-01T${rfq.arrival_time}`,
                           ).toLocaleTimeString([], {
                             hour: "numeric",
                             minute: "2-digit",
@@ -431,30 +441,30 @@ export default function InvoiceScreen() {
 
                   <InfoRow
                     label="Street"
-                    value={inv.rfqId?.delivery_address?.street}
+                    value={rfq?.delivery_address?.street}
                   />
                   <InfoRow
                     label="City"
-                    value={`${inv.rfqId?.delivery_address?.city}, ${inv.rfqId?.delivery_address?.state}`}
+                    value={`${rfq?.delivery_address?.city}, ${rfq?.delivery_address?.state}`}
                   />
                   <InfoRow
                     label="Country"
-                    value={inv.rfqId?.delivery_address?.country}
+                    value={rfq?.delivery_address?.country}
                   />
                   <InfoRow
                     label="Post Code"
-                    value={inv.rfqId?.delivery_address?.postal_code}
+                    value={rfq?.delivery_address?.postal_code}
                   />
                   <InfoRow
                     label="Phone"
-                    value={inv.rfqId?.delivery_address?.phoneNumber}
+                    value={rfq?.delivery_address?.phoneNumber}
                   />
 
-                  {inv.rfqId?.delivery_code && (
+                  {rfq?.delivery_code && (
                     <View style={styles.deliveryCodeBox}>
                       <Ionicons name="lock-closed" size={14} color="#0057b8" />
                       <Text style={styles.deliveryCodeText}>
-                        Delivery Code: {inv.rfqId?.delivery_code}
+                        Delivery Code: {rfq?.delivery_code}
                       </Text>
                     </View>
                   )}
@@ -463,7 +473,7 @@ export default function InvoiceScreen() {
             )}
 
             {/* ── escrow ── */}
-            {(escrow || inv.escrowId) && (
+            {(escrow || inv.escrowId || inv.escrowId) && (
               <View style={[styles.card, styles.escrowCard]}>
                 <View style={styles.escrowHeader}>
                   <Ionicons name="shield-checkmark" size={22} color="#0057b8" />
@@ -476,32 +486,41 @@ export default function InvoiceScreen() {
                   <InfoRow
                     label="Escrow ID"
                     value={
-                      escrow?._id ??
+                      escrow?.id ??
                       (typeof inv.escrowId === "string"
                         ? inv.escrowId
-                        : inv.escrowId?._id) ??
+                        : inv.escrowId?.id) ??
+                      inv.escrowId?.id ??
                       "—"
                     }
                   />
                   <InfoRow
                     label="Status"
-                    value={(escrow?.status ?? "active").toUpperCase()}
+                    value={(
+                      escrow?.status ??
+                      inv.escrowId?.status ??
+                      "active"
+                    ).toUpperCase()}
                   />
                   <InfoRow
                     label="Amount"
                     value={fmt(
-                      escrow?.amount ?? inv.rfqId?.amount,
-                      escrow?.currency ?? inv.rfqId?.currency,
+                      escrow?.amount ??
+                        inv.escrowId?.amount ??
+                        rfq?.amount ??
+                        inv.amount,
+                      escrow?.currency ?? rfq?.currency ?? inv.currency,
                     )}
                   />
                 </View>
                 <TouchableOpacity
                   onPress={() => {
                     const escrowId =
-                      escrow?._id ??
+                      escrow?.id ??
                       (typeof inv.escrowId === "string"
                         ? inv.escrowId
-                        : inv.escrowId?._id);
+                        : inv.escrowId?.id) ??
+                      inv.escrowId?.id;
 
                     if (escrowId) {
                       router.push(`/escrow`);
@@ -517,7 +536,8 @@ export default function InvoiceScreen() {
             )}
 
             {/* ── pay button ── */}
-            {inv.status === "pending" && (
+            {(inv.paymentStatus ?? inv.status) === "unpaid" ||
+            (inv.paymentStatus ?? inv.status) === "pending" ? (
               <TouchableOpacity
                 onPress={handlePay}
                 disabled={paying}
@@ -535,17 +555,21 @@ export default function InvoiceScreen() {
                       style={{ marginRight: 8 }}
                     />
                     <Text style={styles.payBtnText}>
-                      Pay {fmt(inv.rfqId?.total, inv.rfqId?.currency)}
+                      Pay{" "}
+                      {fmt(
+                        rfq?.total ?? inv.amount,
+                        rfq?.currency ?? inv.currency,
+                      )}
                     </Text>
                   </View>
                 )}
               </TouchableOpacity>
-            )}
+            ) : null}
 
             {/* footer note */}
             <Text style={styles.footer}>
               Generated on {new Date(inv.createdAt).toLocaleString("en-GB")} ·
-              Ref: {inv._id}
+              Ref: {inv.id}
             </Text>
           </>
         ) : null}

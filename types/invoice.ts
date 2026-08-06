@@ -10,14 +10,14 @@ export type InvoiceStatus =
 export type InvoicePaymentStatus = "unpaid" | "pending" | "paid" | "failed";
 
 export interface InvoiceUser {
-  _id: string;
+  id: string;
   firstName: string;
   email: string;
   phoneNumber: string;
 }
 
 export interface DeliveryAddress {
-  _id: string;
+  id: string;
   street: string;
   city: string;
   state: string;
@@ -40,7 +40,7 @@ export interface InvoiceMetadata {
 export interface RFQ {
   arrival_date: any;
   arrival_time: string;
-  _id: string;
+  id: string;
 
   amount: number;
   currency: string;
@@ -76,7 +76,7 @@ export interface RFQ {
 
 export interface Invoice {
   inv: any;
-  _id: string;
+  id: string;
 
   amount: number;
   currency: string;

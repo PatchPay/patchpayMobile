@@ -1,22 +1,24 @@
 import {
-  View,
-  Text,
-  TouchableOpacity,
   ActivityIndicator,
   Modal,
-  ScrollView,
-  TextInput,
   Platform,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
+import { Quote } from "@/types/rfq.types";
 import { useState } from "react";
 import Toast from "react-native-toast-message";
-import { Quote } from "@/types/rfq.types";
 
 import { STATUS_META } from "@/constant/rfq";
 
 import { rfqService } from "@/api/rfqService";
 import { router } from "expo-router";
+
+type PendingAction = "cancel" | "accept" | "reject" | "delete" | null;
 
 export default function QuoteCard({
   quote,
@@ -28,16 +30,24 @@ export default function QuoteCard({
   onAction: () => void;
 }) {
   const meta = STATUS_META[quote.status] ?? STATUS_META.Pending;
-  const isIssuer = quote.user?._id === currentUserId;
-  const isPending = quote.status?.toLowerCase() === "pending";
+  const quoteId = quote.id.toString();
+
+  // user_data = sender (issuer of the RFQ), destinatary_user = recipient
+  const isSender = Number(currentUserId) === quote.user_data.id;
+  const isRecipient = Number(currentUserId) === quote.destinatary_user.id;
+
+  const isPending = quote.status === "Pending";
+  const isAccepted = quote.status === "Accepted";
+  const isRejected = quote.status === "Rejected";
+  const isCancelled = quote.status === "Cancelled";
+
+  const hasInvoice = !!quote.invoice;
 
   const [loading, setLoading] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
 
   const [visible, setVisible] = useState(false);
-  const [pendingAction, setPendingAction] = useState<
-    "cancel" | "accept" | "reject" | null
-  >(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
 
   // Edit form state — prefilled with quote data
   const [editAmount, setEditAmount] = useState(quote.amount.toString());
@@ -50,15 +60,21 @@ export default function QuoteCard({
   );
   const [editSubmitting, setEditSubmitting] = useState(false);
 
-  const doAction = async (action: "cancel" | "accept" | "reject") => {
+  const doAction = async (
+    action: "cancel" | "accept" | "reject" | "delete",
+  ) => {
     setLoading(true);
     try {
       if (action === "cancel") {
-        await rfqService.cancelQuote(quote._id);
+        await rfqService.cancelQuote(quoteId);
       } else if (action === "accept") {
-        await rfqService.acceptQuote(quote._id);
-      } else {
-        await rfqService.rejectQuote(quote._id);
+        await rfqService.acceptQuote(quoteId);
+      } else if (action === "reject") {
+        await rfqService.rejectQuote(quoteId);
+      } else if (action === "delete") {
+        // NOTE: verify this method name exists on rfqService — added to
+        // support the "Delete RFQ" action requested for the sender.
+        await rfqService.deleteQuote(quoteId);
       }
       onAction();
     } catch (e: any) {
@@ -77,9 +93,37 @@ export default function QuoteCard({
     }
   };
 
-  const confirmAction = (action: "cancel" | "accept" | "reject") => {
+  const confirmAction = (action: "cancel" | "accept" | "reject" | "delete") => {
     setPendingAction(action);
     setVisible(true);
+  };
+
+  const handleGenerateInvoice = async () => {
+    setLoading(true);
+    try {
+      // NOTE: verify this method name exists on rfqService — added to
+      // support the "Generate Invoice" action for accepted RFQs.
+      await rfqService.generateInvoice(quoteId);
+      Toast.show({
+        type: "success",
+        text1: "Invoice generated",
+        position: "top",
+        visibilityTime: 3000,
+      });
+      onAction();
+    } catch (e: any) {
+      const message =
+        e?.response?.data?.message || e?.response?.data?.error || e.message;
+      Toast.show({
+        type: "error",
+        text1: "Error generating invoice",
+        text2: message,
+        position: "top",
+        visibilityTime: 3000,
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEditSubmit = async () => {
@@ -103,7 +147,7 @@ export default function QuoteCard({
       const subtotal = lineTotal + deliveryCharge;
       const totalAmount = subtotal + transactionCharges;
 
-      await rfqService.updateQuote(quote._id, {
+      await rfqService.updateQuote(quoteId, {
         product_description: editDescription.trim(),
         product_quantity: numQty,
         amount: numAmount,
@@ -135,39 +179,92 @@ export default function QuoteCard({
   const inputStyle = {
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: 12,
+    padding: 14,
     fontSize: 14,
-    color: "#0f1923",
-    marginBottom: 12,
+    color: "#0b1220",
+    marginBottom: 14,
     backgroundColor: "#f8fafc",
   };
 
   const labelStyle = {
     fontSize: 11,
     color: "#94a3b8",
-    marginBottom: 4,
-    fontWeight: "600" as const,
+    marginBottom: 6,
+    fontWeight: "700" as const,
+    letterSpacing: 0.3,
+    textTransform: "uppercase" as const,
+  };
+
+  const formatDate = (iso?: string) => {
+    if (!iso) return "N/A";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch {
+      return "N/A";
+    }
+  };
+
+  const senderName =
+    `${quote.user_data?.firstName ?? ""} ${quote.user_data?.surname ?? ""}`.trim() ||
+    "Sender";
+  const recipientName =
+    `${quote.destinatary_user?.firstName ?? ""} ${
+      quote.destinatary_user?.surname ?? ""
+    }`.trim() || "Recipient";
+
+  const confirmCopy: Record<
+    Exclude<PendingAction, null>,
+    { title: string; body: string; confirmColor: string }
+  > = {
+    cancel: {
+      title: "Cancel RFQ",
+      confirmColor: "#ef4444",
+      body: `Are you sure you want to cancel RFQ #${quote.quote_number}? This cannot be undone.`,
+    },
+    accept: {
+      title: "Accept RFQ",
+      confirmColor: "#10b981",
+      body: `Accept RFQ #${quote.quote_number}? You're agreeing to the listed terms.`,
+    },
+    reject: {
+      title: "Reject RFQ",
+      confirmColor: "#ef4444",
+      body: `Reject RFQ #${quote.quote_number}? The sender will be notified.`,
+    },
+    delete: {
+      title: "Delete RFQ",
+      confirmColor: "#ef4444",
+      body: `Permanently delete RFQ #${quote.quote_number}? This cannot be undone.`,
+    },
   };
 
   return (
     <>
       <TouchableOpacity
-        activeOpacity={0.86}
+        activeOpacity={0.9}
         onPress={() =>
           router.push({
             pathname: "/(components)/rfq/[quoteId]",
-            params: { quoteId: quote._id },
+            params: { quoteId: quote.id },
           })
         }
         style={{
           backgroundColor: "#fff",
-          borderRadius: 20,
-          padding: 18,
-          marginBottom: 14,
-          shadowColor: "#000",
-          shadowOpacity: 0.05,
-          shadowRadius: 10,
+          borderRadius: 22,
+          padding: 20,
+          marginBottom: 16,
+          borderWidth: 1,
+          borderColor: "#f1f5f9",
+          shadowColor: "#0f172a",
+          shadowOpacity: 0.06,
+          shadowRadius: 16,
+          shadowOffset: { width: 0, height: 6 },
           elevation: 3,
         }}
       >
@@ -176,28 +273,44 @@ export default function QuoteCard({
           style={{
             flexDirection: "row",
             alignItems: "flex-start",
-            marginBottom: 12,
+            justifyContent: "space-between",
+            marginBottom: 4,
           }}
         >
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: "#0f1923", fontWeight: "700", fontSize: 15 }}>
-              {quote.product_description}
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text
+              style={{
+                color: "#64748b",
+                fontSize: 11,
+                fontWeight: "700",
+                letterSpacing: 0.4,
+                marginBottom: 2,
+              }}
+            >
+              RFQ #{quote.quote_number ?? quoteId.slice(-6)}
             </Text>
-            <Text style={{ color: "#94a3b8", fontSize: 12, marginTop: 3 }}>
-              RFQ #{quote.quote_number ?? quote._id.slice(-6)} ·{" "}
-              {quote.trade_type ?? "Trade"}
+            <Text
+              style={{ color: "#0b1220", fontWeight: "700", fontSize: 16 }}
+              numberOfLines={2}
+            >
+              {quote.product_description}
             </Text>
           </View>
           <View
             style={{
               backgroundColor: meta.bg,
-              borderRadius: 10,
-              paddingHorizontal: 10,
-              paddingVertical: 5,
+              borderRadius: 999,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
             }}
           >
             <Text
-              style={{ color: meta.color, fontSize: 10, fontWeight: "800" }}
+              style={{
+                color: meta.color,
+                fontSize: 10,
+                fontWeight: "800",
+                letterSpacing: 0.5,
+              }}
             >
               {quote.status.toUpperCase()}
             </Text>
@@ -205,65 +318,153 @@ export default function QuoteCard({
         </View>
 
         <View
-          style={{ height: 1, backgroundColor: "#f1f5f9", marginBottom: 12 }}
-        />
-
-        {/* Details */}
-        <View
           style={{
             flexDirection: "row",
-            justifyContent: "space-between",
-            marginBottom: 10,
+            alignItems: "center",
+            marginBottom: 16,
+            marginTop: 4,
           }}
         >
-          <View>
-            <Text style={{ color: "#94a3b8", fontSize: 11 }}>Amount</Text>
-            <Text style={{ color: "#0f1923", fontWeight: "800", fontSize: 17 }}>
-              {quote.currency} {quote.amount.toLocaleString()}
+          <View
+            style={{
+              backgroundColor: "#f1f5f9",
+              borderRadius: 999,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              marginRight: 6,
+            }}
+          >
+            <Text style={{ fontSize: 10, color: "#475569", fontWeight: "600" }}>
+              {quote.trade_type ?? "Trade"}
             </Text>
           </View>
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ color: "#94a3b8", fontSize: 11 }}>Qty</Text>
-            <Text style={{ color: "#0f1923", fontWeight: "700", fontSize: 15 }}>
-              {quote.product_quantity}
+          <View
+            style={{
+              backgroundColor: "#f1f5f9",
+              borderRadius: 999,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+            }}
+          >
+            <Text style={{ fontSize: 10, color: "#475569", fontWeight: "600" }}>
+              {quote.delivery_type ?? "Standard"} delivery
             </Text>
           </View>
         </View>
 
-        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <View
+          style={{ height: 1, backgroundColor: "#f1f5f9", marginBottom: 16 }}
+        />
+
+        {/* Amount + Total */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            marginBottom: 16,
+          }}
+        >
           <View>
-            <Text style={{ color: "#94a3b8", fontSize: 11 }}>
-              {isIssuer ? "Sent to" : "From"}
-            </Text>
-            <Text style={{ color: "#475569", fontSize: 13, fontWeight: "600" }}>
-              {isIssuer
-                ? `${quote.destinatary_user?.firstName ?? quote.recipient?.firstName ?? "Recipient"}`
-                : `${quote.user?.firstName ?? quote.requester?.firstName ?? "Requester"}`}
+            <Text style={labelStyle}>Amount</Text>
+            <Text style={{ color: "#0b1220", fontWeight: "800", fontSize: 20 }}>
+              {quote.currency} {quote.amount.toLocaleString()}
             </Text>
           </View>
           <View style={{ alignItems: "flex-end" }}>
-            <Text style={{ color: "#94a3b8", fontSize: 11 }}>Delivery</Text>
-            <Text style={{ color: "#475569", fontSize: 13, fontWeight: "600" }}>
-              {quote.delivery_type ?? "Standard"}
+            <Text style={labelStyle}>Total</Text>
+            <Text style={{ color: "#0b1220", fontWeight: "800", fontSize: 20 }}>
+              {quote.currency} {(quote.total ?? 0).toLocaleString()}
+            </Text>
+          </View>
+        </View>
+
+        {/* Qty / Arrival */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            marginBottom: 16,
+          }}
+        >
+          <View>
+            <Text style={labelStyle}>Quantity</Text>
+            <Text style={{ color: "#0b1220", fontWeight: "600", fontSize: 14 }}>
+              {quote.product_quantity}
+            </Text>
+          </View>
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={labelStyle}>Arrival</Text>
+            <Text style={{ color: "#0b1220", fontWeight: "600", fontSize: 14 }}>
+              {formatDate(quote.arrival_date)}
+              {quote.arrival_time ? ` · ${quote.arrival_time}` : ""}
+            </Text>
+          </View>
+        </View>
+
+        {/* Sender / Recipient */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            backgroundColor: "#f8fafc",
+            borderRadius: 14,
+            padding: 12,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Text style={labelStyle}>Sender</Text>
+            <Text
+              style={{
+                color: isSender ? "#2541c4" : "#0b1220",
+                fontSize: 13,
+                fontWeight: "700",
+              }}
+              numberOfLines={1}
+            >
+              {senderName}
+              {isSender ? " (You)" : ""}
+            </Text>
+          </View>
+          <View
+            style={{
+              width: 1,
+              backgroundColor: "#e2e8f0",
+              marginHorizontal: 12,
+            }}
+          />
+          <View style={{ flex: 1, alignItems: "flex-end" }}>
+            <Text style={labelStyle}>Recipient</Text>
+            <Text
+              style={{
+                color: isRecipient ? "#2541c4" : "#0b1220",
+                fontSize: 13,
+                fontWeight: "700",
+              }}
+              numberOfLines={1}
+            >
+              {recipientName}
+              {isRecipient ? " (You)" : ""}
             </Text>
           </View>
         </View>
 
         {/* Actions */}
-        {isPending && (
-          <View style={{ marginTop: 14 }}>
-            {loading ? (
-              <ActivityIndicator color="#2541c4" />
-            ) : isIssuer ? (
-              // Issuer sees: Edit + Cancel
-              <View style={{ flexDirection: "row", gap: 10 }}>
+        {loading ? (
+          <View style={{ marginTop: 16, alignItems: "center" }}>
+            <ActivityIndicator color="#2541c4" />
+          </View>
+        ) : (
+          <>
+            {/* Sender actions */}
+            {isSender && isPending && (
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
                 <TouchableOpacity
                   onPress={() => setEditModalOpen(true)}
                   style={{
                     flex: 1,
                     backgroundColor: "#eef2ff",
-                    borderRadius: 12,
-                    paddingVertical: 10,
+                    borderRadius: 14,
+                    paddingVertical: 12,
                     alignItems: "center",
                   }}
                 >
@@ -281,15 +482,15 @@ export default function QuoteCard({
                   onPress={() => confirmAction("cancel")}
                   style={{
                     flex: 1,
-                    backgroundColor: "#fdf0f6",
-                    borderRadius: 12,
-                    paddingVertical: 10,
+                    backgroundColor: "#fff7ed",
+                    borderRadius: 14,
+                    paddingVertical: 12,
                     alignItems: "center",
                   }}
                 >
                   <Text
                     style={{
-                      color: "#FF0000",
+                      color: "#f97316",
                       fontWeight: "700",
                       fontSize: 13,
                     }}
@@ -297,23 +498,137 @@ export default function QuoteCard({
                     Cancel RFQ
                   </Text>
                 </TouchableOpacity>
-              </View>
-            ) : (
-              // Recipient sees: Accept + Reject
-              <View style={{ flexDirection: "row", gap: 10 }}>
                 <TouchableOpacity
-                  onPress={() => confirmAction("accept")}
+                  onPress={() => confirmAction("delete")}
                   style={{
                     flex: 1,
-                    backgroundColor: "#e8faf4",
-                    borderRadius: 12,
-                    paddingVertical: 10,
+                    backgroundColor: "#fef2f2",
+                    borderRadius: 14,
+                    paddingVertical: 12,
                     alignItems: "center",
                   }}
                 >
                   <Text
                     style={{
-                      color: "#2ec4b6",
+                      color: "#ef4444",
+                      fontWeight: "700",
+                      fontSize: 13,
+                    }}
+                  >
+                    Delete RFQ
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {isSender && isAccepted && (
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                {!hasInvoice ? (
+                  <TouchableOpacity
+                    onPress={handleGenerateInvoice}
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#eef2ff",
+                      borderRadius: 14,
+                      paddingVertical: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#2541c4",
+                        fontWeight: "700",
+                        fontSize: 13,
+                      }}
+                    >
+                      Generate Invoice
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#f0fdf4",
+                      borderRadius: 14,
+                      paddingVertical: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: "#16a34a",
+                        fontWeight: "700",
+                        fontSize: 13,
+                      }}
+                    >
+                      Invoice Generated
+                    </Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  onPress={() => confirmAction("delete")}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#fef2f2",
+                    borderRadius: 14,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#ef4444",
+                      fontWeight: "700",
+                      fontSize: 13,
+                    }}
+                  >
+                    Delete RFQ
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {isSender && (isRejected || isCancelled) && (
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                <TouchableOpacity
+                  onPress={() => confirmAction("delete")}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#fef2f2",
+                    borderRadius: 14,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#ef4444",
+                      fontWeight: "700",
+                      fontSize: 13,
+                    }}
+                  >
+                    Delete RFQ
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Recipient actions */}
+            {isRecipient && isPending && (
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+                <TouchableOpacity
+                  onPress={() => confirmAction("accept")}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#e8faf4",
+                    borderRadius: 14,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#10b981",
                       fontWeight: "700",
                       fontSize: 13,
                     }}
@@ -325,15 +640,15 @@ export default function QuoteCard({
                   onPress={() => confirmAction("reject")}
                   style={{
                     flex: 1,
-                    backgroundColor: "#fdf0f6",
-                    borderRadius: 12,
-                    paddingVertical: 10,
+                    backgroundColor: "#fef2f2",
+                    borderRadius: 14,
+                    paddingVertical: 12,
                     alignItems: "center",
                   }}
                 >
                   <Text
                     style={{
-                      color: "#FF0000",
+                      color: "#ef4444",
                       fontWeight: "700",
                       fontSize: 13,
                     }}
@@ -341,11 +656,32 @@ export default function QuoteCard({
                     Reject
                   </Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => confirmAction("cancel")}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#fff7ed",
+                    borderRadius: 14,
+                    paddingVertical: 12,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#f97316",
+                      fontWeight: "700",
+                      fontSize: 13,
+                    }}
+                  >
+                    Cancel RFQ
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
-          </View>
+          </>
         )}
       </TouchableOpacity>
+
       {/* ── Confirm Action Modal ── */}
       <Modal
         visible={visible}
@@ -358,71 +694,81 @@ export default function QuoteCard({
             flex: 1,
             justifyContent: "center",
             alignItems: "center",
-            backgroundColor: "rgba(0,0,0,0.4)",
+            backgroundColor: "rgba(15,23,42,0.5)",
           }}
         >
           <View
             style={{
               backgroundColor: "#fff",
-              borderRadius: 20,
+              borderRadius: 22,
               padding: 24,
-              width: "80%",
+              width: "82%",
             }}
           >
-            <Text
-              style={{
-                fontWeight: "800",
-                fontSize: 16,
-                marginBottom: 8,
-                color: "#0f1923",
-              }}
-            >
-              {pendingAction === "cancel"
-                ? "Cancel RFQ"
-                : pendingAction === "accept"
-                  ? "Accept RFQ"
-                  : "Reject RFQ"}
-            </Text>
+            {pendingAction && (
+              <>
+                <Text
+                  style={{
+                    fontWeight: "800",
+                    fontSize: 17,
+                    marginBottom: 8,
+                    color: "#0b1220",
+                  }}
+                >
+                  {confirmCopy[pendingAction].title}
+                </Text>
 
-            <Text style={{ color: "#64748b", marginBottom: 20, fontSize: 14 }}>
-              Are you sure you want to {pendingAction} RFQ #{quote.quote_number}
-              ?
-            </Text>
+                <Text
+                  style={{
+                    color: "#64748b",
+                    marginBottom: 22,
+                    fontSize: 14,
+                    lineHeight: 20,
+                  }}
+                >
+                  {confirmCopy[pendingAction].body}
+                </Text>
 
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <TouchableOpacity
-                onPress={() => setVisible(false)}
-                style={{
-                  flex: 1,
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor: "#f1f5f9",
-                  alignItems: "center",
-                }}
-              >
-                <Text style={{ fontWeight: "700", color: "#64748b" }}>No</Text>
-              </TouchableOpacity>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <TouchableOpacity
+                    onPress={() => setVisible(false)}
+                    style={{
+                      flex: 1,
+                      padding: 13,
+                      borderRadius: 14,
+                      backgroundColor: "#f1f5f9",
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={{ fontWeight: "700", color: "#64748b" }}>
+                      No
+                    </Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => {
-                  setVisible(false);
-                  doAction(pendingAction!);
-                }}
-                style={{
-                  flex: 1,
-                  padding: 12,
-                  borderRadius: 12,
-                  backgroundColor:
-                    pendingAction === "accept" ? "#2ec4b6" : "#ef4444",
-                  alignItems: "center",
-                }}
-              >
-                <Text style={{ fontWeight: "700", color: "#fff" }}>Yes</Text>
-              </TouchableOpacity>
-            </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setVisible(false);
+                      doAction(pendingAction);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: 13,
+                      borderRadius: 14,
+                      backgroundColor: confirmCopy[pendingAction].confirmColor,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text style={{ fontWeight: "700", color: "#fff" }}>
+                      Yes
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
+
       {/* ── Edit RFQ Modal ── */}
       <Modal
         visible={editModalOpen}
@@ -434,14 +780,14 @@ export default function QuoteCard({
           style={{
             flex: 1,
             justifyContent: "flex-end",
-            backgroundColor: "rgba(0,0,0,0.4)",
+            backgroundColor: "rgba(15,23,42,0.5)",
           }}
         >
           <View
             style={{
               backgroundColor: "#fff",
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
+              borderTopLeftRadius: 26,
+              borderTopRightRadius: 26,
               paddingHorizontal: 20,
               paddingTop: 16,
               paddingBottom: Platform.OS === "ios" ? 40 : 24,
@@ -471,7 +817,7 @@ export default function QuoteCard({
             >
               <View>
                 <Text
-                  style={{ fontSize: 17, fontWeight: "800", color: "#0f1923" }}
+                  style={{ fontSize: 18, fontWeight: "800", color: "#0b1220" }}
                 >
                   Edit RFQ
                 </Text>
@@ -540,7 +886,7 @@ export default function QuoteCard({
                     style={{
                       flex: 1,
                       paddingVertical: 10,
-                      borderRadius: 10,
+                      borderRadius: 12,
                       alignItems: "center",
                       borderWidth: 1,
                       borderColor:
@@ -567,8 +913,8 @@ export default function QuoteCard({
                 disabled={editSubmitting}
                 style={{
                   backgroundColor: "#2541c4",
-                  borderRadius: 14,
-                  paddingVertical: 15,
+                  borderRadius: 16,
+                  paddingVertical: 16,
                   alignItems: "center",
                 }}
               >

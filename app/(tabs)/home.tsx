@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import NotificationBell from "../(components)/notification/notificationbell";
 
 // ── Currency config ───────────────────────────────────────────────────────────
 type SupportedCurrency = "NGN" | "USD" | "EUR" | "GBP" | "TZS";
@@ -210,7 +211,7 @@ export default function HomeScreen() {
   const fetchData = async () => {
     try {
       const [u, w] = await Promise.all([getUser(), getWallet()]);
-      const tx = await getUserTransactions(u._id);
+      const tx = await getUserTransactions(u.id);
       setUser(u);
       setWallet(w?.data ?? w);
       const txList = tx?.data ?? tx ?? [];
@@ -238,7 +239,7 @@ export default function HomeScreen() {
 
   const balance: number = wallet?.balance ?? 0;
   const currency: string = wallet?.currency ?? "NGN";
-  const walletId: string = wallet?._id ?? wallet?.id ?? "";
+  const walletId: string = wallet?.id ?? wallet?.id ?? "";
   const accountNumber: string = wallet?.accountNumber ?? "—";
   const isActive: boolean = wallet?.isActive ?? false;
   const firstName: string = user?.firstName ?? "User";
@@ -392,11 +393,7 @@ export default function HomeScreen() {
                 justifyContent: "center",
               }}
             >
-              <Ionicons
-                name="notifications-outline"
-                size={19}
-                color="rgba(255,255,255,0.85)"
-              />
+              <NotificationBell />
             </TouchableOpacity>
           </View>
 
@@ -717,7 +714,8 @@ export default function HomeScreen() {
                 const meta = getTxMeta(tx, walletId);
                 const incoming = isIncomingTx(tx, walletId);
                 const label = getTxLabel(tx);
-                const date = formatTxDate(tx.createdAt);
+                const date = formatTxDate(tx.created_at);
+
                 const txStatus = tx.status?.toLowerCase() ?? "completed";
                 const sc = STATUS_CONFIG[txStatus] ?? STATUS_CONFIG.completed;
                 const txFormatted = formatBalance(
@@ -727,7 +725,7 @@ export default function HomeScreen() {
 
                 return (
                   <TouchableOpacity
-                    key={tx._id ?? tx.id}
+                    key={tx.id ?? tx.id}
                     activeOpacity={0.75}
                     style={{
                       backgroundColor: "#fff",

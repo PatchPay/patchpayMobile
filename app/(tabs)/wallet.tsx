@@ -1,22 +1,22 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  TextInput,
-  Modal,
-  Alert,
-  ActivityIndicator,
-} from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { useEffect, useState } from "react";
 import {
-  getCards,
-  createCard,
-  updateCard,
-  deleteCard,
+    ActivityIndicator,
+    Alert,
+    Modal,
+    ScrollView,
+    StatusBar,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from "react-native";
+import {
+    createCard,
+    deleteCard,
+    getCards,
+    updateCard,
 } from "../../api/cardapi";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -199,7 +199,7 @@ export default function CardScreen() {
       setSaving(true);
 
       if (editTarget) {
-        await updateCard(editTarget._id, form);
+        await updateCard(editTarget.id, form);
       } else {
         await createCard(form);
       }
@@ -226,7 +226,7 @@ export default function CardScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await deleteCard(card._id);
+              await deleteCard(card.id);
               fetchCards();
             } catch (e) {
               Alert.alert("Error", "Could not delete card.");
@@ -290,7 +290,7 @@ export default function CardScreen() {
               contentContainerClassName="px-5 pt-6 pb-4 gap-4"
             >
               {cards.map((card, i) => (
-                <VisualCard key={card._id} card={card} index={i} />
+                <VisualCard key={card.id} card={card} index={i} />
               ))}
             </ScrollView>
 
@@ -301,7 +301,7 @@ export default function CardScreen() {
               </Text>
               {cards.map((card, i) => (
                 <View
-                  key={card._id}
+                  key={card.id}
                   className="bg-white border border-slate-100 rounded-2xl px-5 py-4 mb-3 shadow-sm shadow-slate-100"
                 >
                   <View className="flex-row items-center justify-between mb-3">

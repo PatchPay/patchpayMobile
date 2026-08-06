@@ -3,7 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useState } from "react";
 
 type User = {
-  _id: string;
+  id: string;
   email?: string;
   firstName?: string;
   middleName?: string;

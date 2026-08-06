@@ -10,11 +10,11 @@ export const getWallet = async () => {
   return res.data;
 };
 
-export const getUserTransactions = async (userId: string) => {
+export const getUserTransactions = async (id: number) => {
   try {
     const token = await AsyncStorage.getItem("token");
 
-    const res = await API.get(`/transactions/user/${userId}`, {
+    const res = await API.get(`/transactions/user/${id}`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -24,7 +24,7 @@ export const getUserTransactions = async (userId: string) => {
   } catch (error: any) {
     console.log(
       "❌ ERROR fetching user transactions:",
-      error?.response || error,
+      error?.response?.data || error,
     );
     throw error;
   }

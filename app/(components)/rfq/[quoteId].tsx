@@ -1,3 +1,10 @@
+import { invoiceService } from "@/api/invoiceService";
+import { rfqService } from "@/api/rfqService";
+import { STATUS_META } from "@/constant/rfq";
+import { Quote } from "@/types/rfq";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -8,33 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
 import Toast from "react-native-toast-message";
-import { invoiceService } from "@/api/invoiceService";
-import { rfqService } from "@/api/rfqService";
-import { Quote } from "@/types/rfq";
-import { STATUS_META } from "@/constant/rfq";
-
-const personName = (person?: { firstName?: string; lastName?: string }) =>
-  `${person?.firstName ?? ""} ${person?.lastName ?? ""}`.trim() || "Unknown";
-
-const quoteInvoiceId = (quote?: Quote | null) => {
-  if (!quote?.invoice) {
-    return quote?.invoiceId ?? quote?.invoice_id ?? quote?.invoiceID;
-  }
-
-  if (typeof quote.invoice === "string") return quote.invoice;
-
-  return (
-    quote.invoiceId ??
-    quote.invoice_id ??
-    quote.invoiceID ??
-    quote.invoice._id ??
-    quote.invoice.id
-  );
-};
 
 export default function RFQDetailsScreen() {
   const { quoteId } = useLocalSearchParams<{ quoteId: string }>();
@@ -87,10 +68,10 @@ export default function RFQDetailsScreen() {
   };
 
   const handleGenerateInvoice = async () => {
-    if (!quote?._id) return;
+    if (!quote?.id) return;
     setInvoiceLoading(true);
     try {
-      const invoice = await invoiceService.generateInvoice(quote._id);
+      const invoice = await invoiceService.generateInvoice(String(quote.id));
 
       Toast.show({
         type: "success",
@@ -100,7 +81,7 @@ export default function RFQDetailsScreen() {
 
       await loadQuote();
 
-      const generatedInvoiceId = invoice._id;
+      const generatedInvoiceId = invoice.id;
       if (generatedInvoiceId) {
         router.push({
           pathname: "/(components)/invoice",
@@ -121,12 +102,16 @@ export default function RFQDetailsScreen() {
   const meta = STATUS_META[quote?.status ?? "Pending"] ?? STATUS_META.Pending;
   const isPending = quote?.status?.toLowerCase() === "pending";
   const isAccepted = quote?.status?.toLowerCase() === "accepted";
-  const invoiceId = quoteInvoiceId(quote);
+  const invoiceId = quote?.invoice;
   const canGenerateInvoice = Boolean(isAccepted && !invoiceId);
 
   return (
     <View style={{ flex: 1, backgroundColor: "#f2f4f8" }}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle="light-content"
+      />
 
       <LinearGradient
         colors={["#1a1060", "#1e2d8f", "#2541c4", "#6a3de8"]}
@@ -166,7 +151,13 @@ export default function RFQDetailsScreen() {
         {loading ? (
           <ActivityIndicator color="#2541c4" style={{ marginTop: 40 }} />
         ) : error ? (
-          <View style={{ backgroundColor: "#fff1f1", borderRadius: 14, padding: 16 }}>
+          <View
+            style={{
+              backgroundColor: "#fff1f1",
+              borderRadius: 14,
+              padding: 16,
+            }}
+          >
             <Text style={{ color: "#ef4444", fontWeight: "700" }}>
               Unable to load RFQ
             </Text>
@@ -186,13 +177,40 @@ export default function RFQDetailsScreen() {
           </View>
         ) : quote ? (
           <View style={{ gap: 14 }}>
-            <View style={{ backgroundColor: "#fff", borderRadius: 16, padding: 18 }}>
-              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ color: "#0f1923", fontSize: 18, fontWeight: "800", flex: 1 }}>
+            <View
+              style={{ backgroundColor: "#fff", borderRadius: 16, padding: 18 }}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Text
+                  style={{
+                    color: "#0f1923",
+                    fontSize: 18,
+                    fontWeight: "800",
+                    flex: 1,
+                  }}
+                >
                   {quote.product_description}
                 </Text>
-                <View style={{ backgroundColor: meta.bg, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 }}>
-                  <Text style={{ color: meta.color, fontSize: 10, fontWeight: "800" }}>
+                <View
+                  style={{
+                    backgroundColor: meta.bg,
+                    borderRadius: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: meta.color,
+                      fontSize: 10,
+                      fontWeight: "800",
+                    }}
+                  >
                     {quote.status.toUpperCase()}
                   </Text>
                 </View>
@@ -203,19 +221,69 @@ export default function RFQDetailsScreen() {
             </View>
 
             {[
-              ["Amount", `${quote.currency} ${quote.amount.toLocaleString()}`],
+              ["Quote Number", quote.quote_number],
+              [
+                "Amount",
+                `${quote.currency} ${Number(quote.amount).toLocaleString()}`,
+              ],
               ["Quantity", String(quote.product_quantity)],
-              ["Requester", personName(quote.user ?? quote.requester)],
-              ["Recipient", personName(quote.destinatary_user ?? quote.recipient)],
-              ["Delivery", quote.delivery_type ?? "Standard"],
-              ["Trade Type", quote.trade_type ?? "Trade"],
+              [
+                "Requester",
+                `${quote.user_data?.firstName ?? ""} ${quote.user_data?.surname ?? ""}`.trim(),
+              ],
+              [
+                "Recipient",
+                `${quote.destinatary_user?.firstName ?? ""} ${quote.destinatary_user?.surname ?? ""}`.trim(),
+              ],
+              ["Delivery", quote.delivery_type],
+              ["Trade Type", quote.trade_type],
+              [
+                "Arrival Date",
+                new Date(quote.arrival_date).toLocaleDateString(),
+              ],
+              ["Arrival Time", quote.arrival_time],
+              [
+                "Delivery Charge",
+                `${quote.currency} ${Number(quote.delivery_charge).toLocaleString()}`,
+              ],
+              [
+                "Transaction Fee",
+                `${quote.currency} ${Number(quote.transaction_charges).toLocaleString()}`,
+              ],
+              [
+                "Subtotal",
+                `${quote.currency} ${Number(quote.subtotal).toLocaleString()}`,
+              ],
+              [
+                "Total",
+                `${quote.currency} ${Number(quote.total).toLocaleString()}`,
+              ],
             ].map(([label, value]) => (
-              <View key={label} style={{ backgroundColor: "#fff", borderRadius: 14, padding: 16 }}>
-                <Text style={{ color: "#94a3b8", fontSize: 11, marginBottom: 4 }}>
+              <View
+                key={label}
+                style={{
+                  backgroundColor: "#fff",
+                  borderRadius: 14,
+                  padding: 16,
+                }}
+              >
+                <Text
+                  style={{
+                    color: "#94a3b8",
+                    fontSize: 11,
+                    marginBottom: 4,
+                  }}
+                >
                   {label}
                 </Text>
-                <Text style={{ color: "#0f1923", fontWeight: "700" }}>
-                  {value}
+
+                <Text
+                  style={{
+                    color: "#0f1923",
+                    fontWeight: "700",
+                  }}
+                >
+                  {String(value)}
                 </Text>
               </View>
             ))}
@@ -228,7 +296,12 @@ export default function RFQDetailsScreen() {
                     params: { invoiceId },
                   })
                 }
-                style={{ backgroundColor: "#eef2ff", borderRadius: 14, paddingVertical: 14, alignItems: "center" }}
+                style={{
+                  backgroundColor: "#eef2ff",
+                  borderRadius: 14,
+                  paddingVertical: 14,
+                  alignItems: "center",
+                }}
               >
                 <Text style={{ color: "#2541c4", fontWeight: "800" }}>
                   View Invoice
@@ -262,23 +335,47 @@ export default function RFQDetailsScreen() {
                 <TouchableOpacity
                   disabled={actionLoading}
                   onPress={() => runAction("accept")}
-                  style={{ flex: 1, backgroundColor: "#2ec4b6", borderRadius: 14, paddingVertical: 14, alignItems: "center" }}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#2ec4b6",
+                    borderRadius: 14,
+                    paddingVertical: 14,
+                    alignItems: "center",
+                  }}
                 >
-                  <Text style={{ color: "#fff", fontWeight: "800" }}>Accept</Text>
+                  <Text style={{ color: "#fff", fontWeight: "800" }}>
+                    Accept
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   disabled={actionLoading}
                   onPress={() => runAction("reject")}
-                  style={{ flex: 1, backgroundColor: "#ef4444", borderRadius: 14, paddingVertical: 14, alignItems: "center" }}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#ef4444",
+                    borderRadius: 14,
+                    paddingVertical: 14,
+                    alignItems: "center",
+                  }}
                 >
-                  <Text style={{ color: "#fff", fontWeight: "800" }}>Reject</Text>
+                  <Text style={{ color: "#fff", fontWeight: "800" }}>
+                    Reject
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   disabled={actionLoading}
                   onPress={() => runAction("cancel")}
-                  style={{ flex: 1, backgroundColor: "#64748b", borderRadius: 14, paddingVertical: 14, alignItems: "center" }}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#64748b",
+                    borderRadius: 14,
+                    paddingVertical: 14,
+                    alignItems: "center",
+                  }}
                 >
-                  <Text style={{ color: "#fff", fontWeight: "800" }}>Cancel</Text>
+                  <Text style={{ color: "#fff", fontWeight: "800" }}>
+                    Cancel
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}

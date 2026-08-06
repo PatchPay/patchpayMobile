@@ -1,5 +1,5 @@
-import axios, { InternalAxiosRequestConfig } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios, { InternalAxiosRequestConfig } from "axios";
 
 interface AxiosRequestConfigWithMeta extends InternalAxiosRequestConfig {
   metadata?: {
@@ -8,7 +8,7 @@ interface AxiosRequestConfigWithMeta extends InternalAxiosRequestConfig {
 }
 
 const API = axios.create({
-  baseURL: "https://patchpaybackend.onrender.com/api",
+  baseURL: "https://api.191.218.161.153.nip.io/api/",
   timeout: 20000,
 });
 

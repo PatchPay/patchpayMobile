@@ -1,6 +1,6 @@
+import { CreateRFQPayload, Quote } from "@/types/rfq";
 import API from "./axiosInstance";
 import { unwrapData } from "./response";
-import { CreateRFQPayload, Quote } from "@/types/rfq";
 
 export interface QuoteActionResponse {
   quote?: Quote;
@@ -14,6 +14,7 @@ export interface QuoteActionResponse {
 export const rfqService = {
   async createRFQ(payload: CreateRFQPayload) {
     const res = await API.post("/rfq/create", payload);
+    console.log("this the response frome the create rfq", res.data);
     return res.data;
   },
 
@@ -48,6 +49,14 @@ export const rfqService = {
 
   async cancelQuote(quoteId: string) {
     const res = await API.put(`/rfq/quotes/${quoteId}/cancel`);
+    return res.data;
+  },
+  async generateInvoice(quoteId: string) {
+    const res = await API.post(`/invoices/generate-invoice/${quoteId}`);
+    return res.data;
+  },
+  async deleteQuote(quoteId: string) {
+    const res = await API.delete(`/rfq/quotes/${quoteId}`);
     return res.data;
   },
 };

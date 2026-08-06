@@ -197,11 +197,15 @@ export default function TransactionsScreen() {
     try {
       const [u, w] = await Promise.all([getUser(), getWallet()]);
 
-      setUser(u);
+      const user = u;
+
+      console.log("getUser response:", u);
+      setUser(user);
       setWallet(w?.data ?? w);
 
-      const tx = await getUserTransactions(u._id);
+      const tx = await getUserTransactions(user.id);
       const txList = tx?.data ?? tx ?? [];
+
       setTransactions(Array.isArray(txList) ? txList : []);
     } catch (e) {
       console.log("Fetch error:", e);
@@ -209,11 +213,12 @@ export default function TransactionsScreen() {
   };
 
   const fetchTransactions = async () => {
-    if (!user?._id) return;
+    if (!user?.id) return;
 
     try {
-      const tx = await getUserTransactions(user._id);
+      const tx = await getUserTransactions(user.id);
       const txList = tx?.data ?? tx ?? [];
+
       setTransactions(Array.isArray(txList) ? txList : []);
     } catch (error) {
       console.log("Transaction fetch error:", error);
@@ -240,7 +245,7 @@ export default function TransactionsScreen() {
   };
 
   const currency: string = wallet?.currency ?? "NGN";
-  const walletId: string = wallet?._id ?? wallet?.id ?? "";
+  const walletId: string = wallet?.id ?? wallet?.id ?? "";
 
   const totalIn = transactions
     .filter((tx) => isIncomingTx(tx, walletId))
@@ -265,7 +270,7 @@ export default function TransactionsScreen() {
     const meta = getTxMeta(tx, walletId);
     const incoming = isIncomingTx(tx, walletId);
     const label = getTxLabel(tx);
-    const date = formatTxDate(tx.createdAt);
+    const date = formatTxDate(tx.created_at);
     const txStatus = tx.status?.toLowerCase() ?? "completed";
     const sc = STATUS_CONFIG[txStatus] ?? STATUS_CONFIG.completed;
     const txFormatted = formatBalance(
@@ -809,7 +814,7 @@ export default function TransactionsScreen() {
       ) : (
         <FlatList
           data={filtered}
-          keyExtractor={(tx) => tx._id ?? tx.id ?? String(Math.random())}
+          keyExtractor={(tx) => tx.id ?? tx.id ?? String(Math.random())}
           renderItem={renderTx}
           contentContainerStyle={{
             paddingHorizontal: 18,

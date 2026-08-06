@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
 import API from "@/api/axiosInstance";
+import { useEffect, useState } from "react";
 
 export type Beneficiary = {
-  _id: string;
+  id: string;
   name: string;
   accountNumber: string;
   bankName: string;

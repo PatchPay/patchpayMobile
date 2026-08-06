@@ -8,7 +8,7 @@ export type EscrowStatus =
   | string;
 
 export interface Escrow {
-  _id: string;
+  id: string;
   invoiceId?: string;
   rfqId?: string;
   amount: number;
