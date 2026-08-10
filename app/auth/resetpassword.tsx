@@ -1,6 +1,7 @@
-import { useNavigation, useRoute } from "@react-navigation/native";
+
 import { ArrowLeft, Eye, EyeOff, KeyRound } from "lucide-react-native";
 import React, { useState } from "react";
+import {router, useLocalSearchParams} from 'expo-router'
 import {
     ActivityIndicator,
     SafeAreaView,
@@ -13,9 +14,10 @@ import {
 import { resetPassword } from "@/api/authapi";
 
 const ResetPasswordScreen = () => {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-  const emailFromParams: string = route.params?.email || "";
+  const navigation = router;
+  const params = useLocalSearchParams();
+
+  const emailFromParams: string = (params.email as string) || "";
 
   const [email, setEmail] = useState(emailFromParams);
   const [otp, setOtp] = useState("");
@@ -53,7 +55,7 @@ const ResetPasswordScreen = () => {
         password,
         confirmPassword,
       });
-      navigation.navigate("ResetSuccessScreen");
+      navigation.push({ pathname: "./ResetSuccessScreen" });
     } catch (err: any) {
       const message =
         err?.response?.data?.message ||
@@ -80,7 +82,7 @@ const ResetPasswordScreen = () => {
     <SafeAreaView className="flex-1 bg-surface">
       <View className="px-5 pt-10">
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.back()}
           className="p-1 -ml-1"
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
