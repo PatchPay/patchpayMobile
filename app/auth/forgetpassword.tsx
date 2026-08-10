@@ -1,13 +1,13 @@
-import { useNavigation } from "@react-navigation/native";
+import { router } from "expo-router";
 import { ArrowLeft, Mail } from "lucide-react-native";
 import React, { useState } from "react";
 import {
-    ActivityIndicator,
-    SafeAreaView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  SafeAreaView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { forgotPassword } from "@/api/authapi";
@@ -15,7 +15,7 @@ import { forgotPassword } from "@/api/authapi";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const ForgotPasswordScreen = () => {
-  const navigation = useNavigation<any>();
+  const navigation = router;
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -37,7 +37,10 @@ const ForgotPasswordScreen = () => {
     setLoading(true);
     try {
       await forgotPassword(email.trim());
-      navigation.navigate("ResetEmailSentScreen", { email: email.trim() });
+      navigation.push({
+        pathname: "./ResetEmailSentScreen",
+        params: { email: email.trim() },
+      });
     } catch (err: any) {
       setError(
         err?.response?.data?.message ||
@@ -53,7 +56,7 @@ const ForgotPasswordScreen = () => {
     <SafeAreaView className="flex-1 bg-surface">
       <View className="px-5 pt-10">
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.back()}
           className="p-1 -ml-1"
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -111,7 +114,7 @@ const ForgotPasswordScreen = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.back()}
           className="items-center mt-5"
         >
           <Text className="text-gray-500 text-sm">

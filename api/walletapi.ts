@@ -57,6 +57,39 @@ export const setTransactionPin = async (
   }
 };
 
+export const changeTransactionPin = async (
+  currentPin: string,
+  newPin: string,
+  confirmPin: string,
+) => {
+  try {
+    const token = await AsyncStorage.getItem("token");
+
+    const res = await API.post(
+      "/users/transaction-pin/change",
+      {
+        currentPin,
+        newPin,
+        confirmPin,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    return res.data;
+  } catch (error: any) {
+    console.log(
+      "❌ ERROR changing transaction pin:",
+      error?.response?.data || error,
+    );
+
+    throw error;
+  }
+};
+
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 const getAuthHeaders = async () => {

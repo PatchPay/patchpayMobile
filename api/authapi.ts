@@ -39,3 +39,54 @@ export const resetPassword = async (payload: {
   const { data } = await API.post(`/users/reset-password`, payload);
   return data;
 };
+
+export const LogoutUser = async () => {
+  try {
+    const token = await AsyncStorage.getItem("token");
+
+    // Notify backend that the user is logging out
+    await API.post(
+      "/users/logout",
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    // Clear local authentication data
+    await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem("user");
+
+    return true;
+  } catch (error) {
+    console.error("Logout API error:", error);
+
+    // Still clear local auth data even if the API request fails
+    await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem("user");
+
+    return true;
+  }
+};
+
+export const updateUser = async (data: {
+  firstName?: string;
+  middleName?: string;
+  surname?: string;
+  address?: any;
+  phoneNumber?: string;
+  country?: string;
+  countryCode?: string;
+  state?: string;
+  continent?: string;
+}) => {
+  const res = await API.put("/users/profile", data, {
+    headers: {
+      Authorization: `Bearer ${await AsyncStorage.getItem("token")}`,
+    },
+  });
+
+  return res.data;
+};

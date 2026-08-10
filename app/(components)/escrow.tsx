@@ -1,4 +1,4 @@
-import { useNavigation } from "@react-navigation/native"; // adjust if using a different router (e.g. expo-router's useRouter)
+import { router } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
   SafeAreaView,
@@ -45,7 +45,7 @@ const formatDate = (iso: string) => {
 
 const EscrowDetailsScreen = () => {
   const { user } = useAuth(); // expects user.id
-  const navigation = useNavigation();
+  const navigation = router;
   const [escrow, setEscrow] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -81,7 +81,7 @@ const EscrowDetailsScreen = () => {
     return (
       <SafeAreaView className="flex-1 bg-gray-100 items-center justify-center px-6">
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.back()}
           className="absolute top-10 left-5 p-2"
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -109,7 +109,7 @@ const EscrowDetailsScreen = () => {
         <View className="bg-brand px-5 pt-10 pb-8 rounded-b-lg">
           <View className="flex-row items-center">
             <TouchableOpacity
-              onPress={() => navigation.goBack()}
+              onPress={() => navigation.back()}
               className="mr-3 p-1 -ml-1"
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >

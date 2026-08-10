@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { router } from "expo-router";
 import { ArrowLeft, MailCheck } from "lucide-react-native";
 import React, { useState } from "react";
 import { SafeAreaView, Text, TouchableOpacity, View } from "react-native";
@@ -7,9 +7,9 @@ import { SafeAreaView, Text, TouchableOpacity, View } from "react-native";
 import { forgotPassword } from "@/api/authapi";
 
 const ResetEmailSentScreen = () => {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-  const email: string = route.params?.email || "";
+  const navigation = router;
+  const params = new URLSearchParams();
+  const email: string = (params.get("email") as string) || "";
 
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
@@ -32,7 +32,7 @@ const ResetEmailSentScreen = () => {
     <SafeAreaView className="flex-1 bg-surface">
       <View className="px-5 pt-10">
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.back()}
           className="p-1 -ml-1"
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -57,7 +57,12 @@ const ResetEmailSentScreen = () => {
         </Text>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate("ResetPasswordScreen", { email })}
+          onPress={() =>
+            navigation.navigate({
+              pathname: "/auth/resetpassword",
+              params: { email },
+            })
+          }
           className="bg-brand rounded-2xl py-4 items-center mt-8 w-full"
         >
           <Text className="text-white font-semibold">I have the code</Text>

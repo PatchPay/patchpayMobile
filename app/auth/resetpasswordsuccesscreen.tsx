@@ -1,19 +1,13 @@
-import { CommonActions, useNavigation } from "@react-navigation/native";
 import { CheckCircle2 } from "lucide-react-native";
 import React from "react";
 import { SafeAreaView, Text, TouchableOpacity, View } from "react-native";
+import {router} from 'expo-router'
 
 const ResetSuccessScreen = () => {
-  const navigation = useNavigation<any>();
+const navigation = router;
 
   const goToLogin = () => {
-    // Reset the nav stack so the user can't swipe/back into the reset flow
-    navigation.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{ name: "LoginScreen" }],
-      }),
-    );
+    navigation.replace("/auth/login");
   };
 
   return (

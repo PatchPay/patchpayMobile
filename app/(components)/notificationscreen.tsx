@@ -1,20 +1,22 @@
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect } from "@react-navigation/native";
 import {
-    ArrowLeft,
-    Bell,
-    BellOff,
-    CheckCheck,
-    Trash2,
+  ArrowLeft,
+  Bell,
+  BellOff,
+  CheckCheck,
+  Trash2,
 } from "lucide-react-native";
 import React, { useCallback } from "react";
 import {
-    FlatList,
-    RefreshControl,
-    SafeAreaView,
-    Text,
-    TouchableOpacity,
-    View,
+  FlatList,
+  RefreshControl,
+  SafeAreaView,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
+
+import { router } from "expo-router";
 
 import { NotificationItem } from "@/api/notifications";
 import { useNotifications } from "@/context/notificationcontext";
@@ -38,7 +40,7 @@ const formatTimeAgo = (iso: string) => {
 };
 
 const NotificationScreen = () => {
-  const navigation = useNavigation();
+  const navigation = router;
   const {
     notifications,
     unreadCount,
@@ -118,7 +120,7 @@ const NotificationScreen = () => {
       <View className="bg-brand px-5 pt-10 pb-5">
         <View className="flex-row items-center">
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={() => navigation.back()}
             className="mr-3 p-1 -ml-1"
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >

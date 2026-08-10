@@ -1,20 +1,20 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useState, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  StatusBar,
-  Platform,
-  Animated,
-  Alert,
-  Vibration,
-} from "react-native";
+import { setTransactionPin } from "@/api/walletapi";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import { setTransactionPin } from "@/api/walletapi";
+import { useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Animated,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Vibration,
+  View,
+} from "react-native";
 
 const PIN_LENGTH = 4;
 
@@ -145,12 +145,13 @@ export default function SetTransactionPinScreen() {
         "Your transaction PIN has been set successfully.",
         [{ text: "Done", onPress: () => router.back() }],
       );
-    } catch (e) {
+    } catch (err: any) {
       triggerShake();
       setError("Something went wrong. Please try again.");
       setCreatePin("");
       setConfirmPin("");
       setStep("create");
+      console.log("Error setting transaction PIN:", err?.response?.data || err);
     } finally {
       setLoading(false);
     }

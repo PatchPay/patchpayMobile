@@ -1,16 +1,17 @@
-import { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  StatusBar,
-  Image,
-  Alert,
-} from "react-native";
+import { getUser } from "@/api/authapi";
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import { getUser } from "@/api/authapi";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import {
+  Alert,
+  Image,
+  ScrollView,
+  StatusBar,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const getInitials = (firstName?: string, surname?: string) =>
@@ -52,6 +53,7 @@ const InfoRow = ({
 
 // ── component ─────────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
+  const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -103,7 +105,10 @@ export default function ProfileScreen() {
           <Text className="text-white text-xl font-bold tracking-tight">
             My Profile
           </Text>
-          <TouchableOpacity className="w-9 h-9 rounded-xl bg-white/20 items-center justify-center">
+          <TouchableOpacity
+            onPress={() => router.push("/(components)/settings/settingscreen")}
+            className="w-9 h-9 rounded-xl bg-white/20 items-center justify-center"
+          >
             <Feather name="settings" size={16} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -226,7 +231,10 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Edit profile button ───────────────────────────────────────── */}
-        <TouchableOpacity className="bg-brand rounded-md py-4 items-center flex-row justify-center gap-2">
+        <TouchableOpacity
+          onPress={() => router.push("/(components)/settings/settingscreen")}
+          className="bg-brand rounded-md py-4 items-center flex-row justify-center gap-2"
+        >
           <Feather name="edit-2" size={15} color="#fff" />
           <Text className="text-white font-bold text-sm">Edit Profile</Text>
         </TouchableOpacity>
