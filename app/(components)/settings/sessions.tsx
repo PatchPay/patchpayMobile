@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
-import ConfirmModal from "./components/confimmodal";
+import ConfirmModal from "../../../model/confimmodal";
 import SettingsHeader from "./components/settingsheader";
 // import { getSessions, revokeSession } from "@/api/authapi";
 

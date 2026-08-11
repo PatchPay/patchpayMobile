@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import ConfirmModal from "./components/confimmodal";
+import ConfirmModal from "../../../model/confimmodal";
 
 // ── setting row ───────────────────────────────────────────────────────────────
 type SettingRowProps = {

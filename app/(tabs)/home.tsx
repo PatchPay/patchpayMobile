@@ -176,7 +176,7 @@ const ACTIONS = [
     icon: "shield",
     label: "Escrow",
     bg: ["#f5a623", "#e8960f"] as [string, string],
-    path: "/(components)/escrow",
+    path: "/(components)/escrow/mainescrow",
     iconBg: "#fff8ec",
     iconColor: "#f5a623",
   },

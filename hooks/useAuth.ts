@@ -37,6 +37,9 @@ export const useAuth = () => {
       }
 
       const profile = await getUser();
+
+      console.log("Logged in user:", profile);
+      console.log("Logged in user ID:", profile?.id);
       // adjust this line if getUser() response is wrapped, e.g. profile.user
       setUser(profile?.user || profile);
     } catch (err: any) {
