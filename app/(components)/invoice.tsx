@@ -523,7 +523,7 @@ export default function InvoiceScreen() {
                       inv.escrowId?.id;
 
                     if (escrowId) {
-                      router.push(`/escrow`);
+                      router.push(`/(components)/escrow/${escrowId}`);
                     }
                   }}
                   activeOpacity={0.85}

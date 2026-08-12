@@ -22,6 +22,12 @@ export const formatDate = (iso: string) => {
     year: "numeric",
   });
 };
+
+export const getId = (value: any) =>
+  typeof value === "object" && value !== null
+    ? (value.id ?? value._id)
+    : value;
+
 export const getRole = (
   escrow: any,
   userId?: string | number,
@@ -30,15 +36,8 @@ export const getRole = (
     return "seller";
   }
 
-  const creatorId =
-    typeof escrow.creatorId === "object"
-      ? (escrow.creatorId?.id ?? escrow.creatorId?._id)
-      : escrow.creatorId;
-
-  const recipientId =
-    typeof escrow.recipientId === "object"
-      ? (escrow.recipientId?.id ?? escrow.recipientId?._id)
-      : escrow.recipientId;
+  const creatorId = getId(escrow.creatorId);
+  const recipientId = getId(escrow.recipientId);
 
   console.log("ROLE CHECK:", {
     escrowId: escrow.id,
