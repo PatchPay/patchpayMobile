@@ -1,6 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "./axiosInstance";
 
+// ===============================
+// AUTH
+// ===============================
+
 export const registerUser = async (data: any) => {
   const res = await API.post("/users/register", data);
   return res.data;
@@ -17,6 +21,7 @@ export const getUser = async () => {
       Authorization: `Bearer ${await AsyncStorage.getItem("token")}`,
     },
   });
+
   return res.data;
 };
 
@@ -25,8 +30,36 @@ export const getCurrentUserId = async () => {
   return user.id;
 };
 
+// ===============================
+// EMAIL VERIFICATION
+// ===============================
+
+export const verifyEmail = async (payload: {
+  email: string;
+  otp: string;
+  countryCode?: string;
+}) => {
+  const { data } = await API.post("/users/verify-email", payload);
+  return data;
+};
+
+export const resendOtp = async (email: string) => {
+  const { data } = await API.post("/users/resend-otp", {
+    email,
+  });
+
+  return data;
+};
+
+// ===============================
+// PASSWORD
+// ===============================
+
 export const forgotPassword = async (email: string) => {
-  const { data } = await API.post(`/users/forget-password`, { email });
+  const { data } = await API.post("/users/forget-password", {
+    email,
+  });
+
   return data;
 };
 
@@ -36,15 +69,19 @@ export const resetPassword = async (payload: {
   password: string;
   confirmPassword: string;
 }) => {
-  const { data } = await API.post(`/users/reset-password`, payload);
+  const { data } = await API.post("/users/reset-password", payload);
+
   return data;
 };
+
+// ===============================
+// LOGOUT
+// ===============================
 
 export const LogoutUser = async () => {
   try {
     const token = await AsyncStorage.getItem("token");
 
-    // Notify backend that the user is logging out
     await API.post(
       "/users/logout",
       {},
@@ -55,7 +92,6 @@ export const LogoutUser = async () => {
       },
     );
 
-    // Clear local authentication data
     await AsyncStorage.removeItem("token");
     await AsyncStorage.removeItem("user");
 
@@ -63,13 +99,17 @@ export const LogoutUser = async () => {
   } catch (error) {
     console.error("Logout API error:", error);
 
-    // Still clear local auth data even if the API request fails
+    // Still clear local auth data even if API request fails
     await AsyncStorage.removeItem("token");
     await AsyncStorage.removeItem("user");
 
     return true;
   }
 };
+
+// ===============================
+// USER PROFILE
+// ===============================
 
 export const updateUser = async (data: {
   firstName?: string;

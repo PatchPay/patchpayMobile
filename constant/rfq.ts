@@ -35,4 +35,8 @@ export const STATUS_META: Record<string, { color: string; bg: string }> = {
     color: "#94a3b8",
     bg: "#f1f5f9",
   },
+  completed: {
+    color: "green",
+    bg: "#e8faf4",
+  },
 };

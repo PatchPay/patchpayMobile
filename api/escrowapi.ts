@@ -2,6 +2,99 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getCurrentUserId } from "./authapi";
 import API from "./axiosInstance";
 
+export type DeliveryProofImage = {
+  uri: string;
+  name?: string;
+  type?: string;
+};
+
+const MIME_TYPES_BY_EXTENSION: Record<string, string> = {
+  jpeg: "image/jpeg",
+  jpg: "image/jpg",
+  png: "image/png",
+  webp: "image/webp",
+};
+
+const EXTENSIONS_BY_MIME_TYPE: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
+const normalizeMimeType = (type?: string, uri?: string) => {
+  const normalizedType = type?.trim().toLowerCase();
+  const mimeTypeAliases: Record<string, string> = {
+    "image/jpe": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+    "image/x-png": "image/png",
+  };
+
+  if (normalizedType && EXTENSIONS_BY_MIME_TYPE[normalizedType]) {
+    return normalizedType;
+  }
+
+  if (normalizedType && mimeTypeAliases[normalizedType]) {
+    return mimeTypeAliases[normalizedType];
+  }
+
+  if (normalizedType) {
+    throw new Error("Delivery proof must be a JPG, PNG, or WEBP image");
+  }
+
+  const extension = uri
+    ?.split(/[?#]/, 1)[0]
+    .match(/\.([a-z0-9]+)$/i)?.[1]
+    ?.toLowerCase();
+
+  if (extension && MIME_TYPES_BY_EXTENSION[extension]) {
+    return MIME_TYPES_BY_EXTENSION[extension];
+  }
+
+  if (extension) {
+    throw new Error("Delivery proof must be a JPG, PNG, or WEBP image");
+  }
+
+  return "image/jpeg";
+};
+
+export const normalizeDeliveryProofImage = (
+  image: DeliveryProofImage,
+): Required<DeliveryProofImage> => {
+  if (!image?.uri || /^https?:\/\//i.test(image.uri)) {
+    throw new Error("A local delivery-proof image is required");
+  }
+
+  const type = normalizeMimeType(image.type, image.name || image.uri);
+  const extension = EXTENSIONS_BY_MIME_TYPE[type];
+
+  if (!extension) {
+    throw new Error("Delivery proof must be a JPG, PNG, or WEBP image");
+  }
+
+  const suppliedName = image.name?.trim();
+  const baseName =
+    suppliedName?.replace(/\.[^.]+$/, "") || `delivery-proof-${Date.now()}`;
+
+  return {
+    uri: image.uri,
+    name: `${baseName}.${extension}`,
+    type,
+  };
+};
+
+export const getDeliveryProofUrl = (url?: string | null) => {
+  if (!url || /^https?:\/\//i.test(url)) {
+    return url || null;
+  }
+
+  const origin = (API.defaults.baseURL || "")
+    .replace(/\/api\/?$/i, "")
+    .replace(/\/+$/, "");
+
+  return `${origin}/${url.replace(/^\/+/, "")}`;
+};
+
 export const getAuthToken = async (): Promise<string> => {
   const token =
     (await AsyncStorage.getItem("token")) ||
@@ -86,19 +179,56 @@ export const cancelEscrow = async (id: string) => {
 
 export const markEscrowDelivered = async (
   id: string,
-  image: { uri: string; name?: string; type?: string },
+  image: DeliveryProofImage,
 ) => {
+  const normalizedImage = normalizeDeliveryProofImage(image);
+
   const formData = new FormData();
 
-  // Must match backend:
-  // upload.single("deliveryProof")
   formData.append("deliveryProof", {
-    uri: image.uri,
-    name: image.name || `delivery-proof-${Date.now()}.jpg`,
-    type: image.type || "image/jpeg",
+    uri: normalizedImage.uri,
+    name: normalizedImage.name,
+    type: normalizedImage.type,
   } as any);
 
-  const { data } = await API.post(`/escrow/${id}/deliver`, formData);
+  console.log("========== DELIVERY START ==========");
+
+  console.log("API BASE URL:", API.defaults.baseURL);
+  console.log("ESCROW ID:", id);
+
+  console.log("IMAGE:", {
+    uri: normalizedImage.uri,
+    name: normalizedImage.name,
+    type: normalizedImage.type,
+  });
+
+  try {
+    const { data } = await API.post(`/escrow/${id}/deliver`, formData, {
+      timeout: 60000,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "multipart/form-data",
+      },
+      transformRequest: [(data) => data],
+    });
+
+    console.log("✅ DELIVERY SUCCESS:", data);
+
+    return data.data;
+  } catch (error: any) {
+    console.log("========== DELIVERY ERROR ==========");
+
+    console.log("message:", error?.message);
+    console.log("code:", error?.code);
+    console.log("status:", error?.response?.status);
+    console.log("response:", error?.response?.data);
+
+    throw error;
+  }
+};
+
+export const confirmEscrowReceipt = async (id: string) => {
+  const { data } = await API.post(`/escrow/${id}/confirm-receipt`);
 
   return data.data;
 };

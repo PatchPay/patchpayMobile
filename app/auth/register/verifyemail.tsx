@@ -1,3 +1,4 @@
+import { resendOtp, verifyEmail } from "@/api/authapi";
 import { router } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -22,14 +23,7 @@ async function verifyOtp(
 ): Promise<void> {
   console.log("📤 Sending OTP request:", { email, otp, countryCode });
 
-  const res = await fetch(
-    "https://api.191.218.161.153.nip.io/api/users/verify-email",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, otp, countryCode }),
-    },
-  );
+  const res = await verifyEmail({ email, otp, countryCode });
 
   console.log("📥 Response status:", res.status);
 
@@ -41,29 +35,6 @@ async function verifyOtp(
     throw new Error(data?.message ?? "Verification failed.");
   }
 }
-
-async function resendOtp(email: string): Promise<void> {
-  console.log("📤 Resending OTP:", email);
-
-  const res = await fetch(
-    "https://api.191.218.161.153.nip.io/api/users/resend-otp",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    },
-  );
-
-  const data = await res.json().catch(() => ({})); // ✅ FIX
-
-  console.log("📥 Status:", res.status);
-  console.log("📥 Body:", data);
-
-  if (!res.ok) {
-    throw new Error(data?.message ?? "Could not resend code.");
-  }
-}
-// ─────────────────────────────────────────────────────────────────────────────
 
 const OTP_LENGTH = 6;
 const RESEND_COOLDOWN = 60; // seconds

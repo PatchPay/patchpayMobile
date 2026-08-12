@@ -1,7 +1,7 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
+  CheckCircle,
   FileText,
   Lock,
   PackageCheck,
@@ -9,10 +9,12 @@ import {
   Truck,
   Wallet,
 } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  Alert,
   Image,
   Modal,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   Text,
@@ -20,147 +22,447 @@ import {
   View,
 } from "react-native";
 
-import {
-  getEscrowById,
-  markEscrowDelivered,
-  releaseEscrow,
-} from "@/api/escrowapi";
 import * as ImagePicker from "expo-image-picker";
 
-import { useAuth } from "@/hooks/useAuth"; // adjust to wherever you store the logged-in user
+import {
+  confirmEscrowReceipt,
+  getDeliveryProofUrl,
+  getEscrowById,
+  markEscrowDelivered,
+  normalizeDeliveryProofImage,
+} from "@/api/escrowapi";
+
+import { useAuth } from "@/hooks/useAuth";
 import ConfirmModal from "@/model/confimmodal";
+
 import {
   formatDate,
   formatMoney,
   getCounterpartyName,
+  getId,
   getRole,
   Row,
-  Timeline,
 } from "./escrowshared";
 
 const EscrowDetailsScreen = () => {
-  const { user } = useAuth(); // expects user.id
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
+
+  const params = useLocalSearchParams<{ id: string | string[] }>();
+
+  const escrowId = Array.isArray(params.id) ? params.id[0] : params.id;
+
   const [escrow, setEscrow] = useState<any>(null);
+
   const [loading, setLoading] = useState(true);
-  const [showReleaseModal, setShowReleaseModal] = useState(false);
-  const [releasing, setReleasing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Buyer confirmation
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmingReceipt, setConfirmingReceipt] = useState(false);
+
+  // Seller delivery
   const [showDeliverModal, setShowDeliverModal] = useState(false);
-  const [proofImage, setProofImage] = useState<string | null>(null);
   const [delivering, setDelivering] = useState(false);
+
+  const [proofImage, setProofImage] = useState<{
+    uri: string;
+    name: string;
+    type: string;
+  } | null>(null);
+
   const [deliverError, setDeliverError] = useState<string | null>(null);
 
-  const loadEscrow = async () => {
-    try {
-      const result = await getEscrowById(id as string);
-      setEscrow(result);
-    } catch (err) {
-      console.log(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  /**
+   * Load escrow from backend
+   */
+  const loadEscrow = useCallback(
+    async (showLoader = true) => {
+      if (!escrowId) return;
+
+      try {
+        if (showLoader) {
+          setLoading(true);
+        }
+
+        const result = await getEscrowById(escrowId);
+
+        setEscrow(result);
+      } catch (error: any) {
+        console.log("GET ESCROW ERROR:", {
+          message: error?.message,
+          status: error?.response?.status,
+          response: error?.response?.data,
+        });
+
+        if (error?.response?.status === 404) {
+          setEscrow(null);
+        }
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [escrowId],
+  );
 
   useEffect(() => {
-    if (id) loadEscrow();
-  }, [id]);
+    loadEscrow();
+  }, [loadEscrow]);
 
-  const handleConfirmDelivery = async () => {
-    setReleasing(true);
+  /**
+   * Pull-to-refresh
+   */
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadEscrow(false);
+  };
+
+  /**
+   * BUYER:
+   * Confirm receipt.
+   *
+   * Backend:
+   * POST /escrow/:id/confirm-receipt
+   *
+   * This automatically releases the escrow funds.
+   */
+  const handleConfirmReceipt = async () => {
+    if (!escrowId) return;
+
+    if (!isCreator) {
+      Alert.alert("Not Allowed", "Only the buyer can confirm receipt.");
+      return;
+    }
+
+    if (escrow?.status !== "DELIVERED") {
+      Alert.alert(
+        "Cannot Confirm",
+        "Receipt can only be confirmed after the seller marks the escrow as delivered.",
+      );
+      return;
+    }
+
+    setConfirmingReceipt(true);
+
     try {
-      await releaseEscrow(id as string);
-      setShowReleaseModal(false);
-      await loadEscrow(); // refresh status from the server
-    } catch (err) {
-      console.log(err);
+      const updatedEscrow = await confirmEscrowReceipt(escrowId);
+
+      setShowConfirmModal(false);
+
+      // Immediately update UI with backend response
+      if (updatedEscrow) {
+        setEscrow(updatedEscrow);
+      }
+
+      // Then refresh to make sure everything is synchronized
+      await loadEscrow(false);
+
+      Alert.alert(
+        "Receipt Confirmed",
+        "Receipt has been confirmed and the escrow funds have been released to the seller.",
+      );
+    } catch (error: any) {
+      console.log("CONFIRM RECEIPT ERROR:", {
+        message: error?.message,
+        status: error?.response?.status,
+        response: error?.response?.data,
+      });
+
+      const status = error?.response?.status;
+      const backendMessage = error?.response?.data?.message;
+
+      if (status === 403) {
+        Alert.alert(
+          "Not Allowed",
+          "Only the buyer can confirm receipt for this escrow.",
+        );
+      } else if (status === 400) {
+        Alert.alert(
+          "Cannot Confirm",
+          backendMessage || "Receipt can only be confirmed after delivery.",
+        );
+      } else if (status === 404) {
+        Alert.alert(
+          "Escrow Not Found",
+          "This escrow could no longer be found.",
+        );
+      } else if (!error?.response || error?.code === "ERR_NETWORK") {
+        Alert.alert(
+          "Connection Error",
+          "Unable to connect to the server. Please check your internet connection and try again.",
+        );
+      } else {
+        Alert.alert(
+          "Confirmation Failed",
+          backendMessage || "Failed to confirm receipt.",
+        );
+      }
     } finally {
-      setReleasing(false);
+      setConfirmingReceipt(false);
     }
   };
 
+  /**
+   * SELLER:
+   * Pick delivery proof image
+   */
   const handlePickProofImage = async () => {
+    setDeliverError(null);
+
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) return;
+
+    if (!permission.granted) {
+      setDeliverError(
+        "Photo library permission is required to select delivery proof.",
+      );
+      return;
+    }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
+      allowsEditing: false,
     });
 
-    if (!result.canceled && result.assets?.[0]) {
-      setProofImage(result.assets[0].uri);
+    if (result.canceled || !result.assets?.[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+
+    if (!asset.uri || /^https?:\/\//i.test(asset.uri)) {
+      setDeliverError("Please choose an image stored on this device.");
+      return;
+    }
+
+    try {
+      const normalized = normalizeDeliveryProofImage({
+        uri: asset.uri,
+        name: asset.fileName || undefined,
+        type: asset.mimeType || undefined,
+      });
+
+      setProofImage(normalized);
       setDeliverError(null);
+    } catch (error: any) {
+      setDeliverError(
+        error?.message || "Please choose a JPG, PNG, or WEBP image.",
+      );
     }
   };
 
+  /**
+   * Close delivery modal
+   */
   const closeDeliverModal = () => {
+    if (delivering) return;
+
     setShowDeliverModal(false);
     setProofImage(null);
     setDeliverError(null);
   };
 
+  /**
+   * SELLER:
+   * Submit delivery proof
+   */
   const handleMarkDelivered = async () => {
-    if (!proofImage) {
-      setDeliverError("Please choose a delivery-proof image first");
+    if (!escrowId) return;
+
+    if (!proofImage?.uri) {
+      setDeliverError("Please choose a delivery-proof image first.");
       return;
     }
+
+    if (!isRecipient) {
+      setDeliverError(
+        "Only the seller can submit delivery proof for this escrow.",
+      );
+      return;
+    }
+
+    if (escrow?.status !== "FUNDED") {
+      setDeliverError(
+        "Delivery proof can only be submitted for a funded escrow.",
+      );
+      return;
+    }
+
+    if (__DEV__) {
+      console.log("DELIVERY PROOF REQUEST", {
+        escrowId,
+        userId: user?.id,
+        role,
+        fieldName: "deliveryProof",
+        uri: proofImage.uri,
+        name: proofImage.name,
+        type: proofImage.type,
+      });
+    }
+
     setDelivering(true);
     setDeliverError(null);
+
     try {
-      await markEscrowDelivered(id as string, { uri: proofImage });
+      const updatedEscrow = await markEscrowDelivered(escrowId, proofImage);
+
+      if (updatedEscrow) {
+        setEscrow(updatedEscrow);
+      }
+
       setShowDeliverModal(false);
       setProofImage(null);
-      await loadEscrow();
-    } catch (err: any) {
-      // surfaces the backend's 409 "already submitted" / 403 / etc. messages
-      setDeliverError(
-        err?.response?.data?.message || "Failed to submit delivery proof",
+
+      await loadEscrow(false);
+
+      Alert.alert(
+        "Delivery Submitted",
+        "Delivery proof has been submitted successfully. The buyer can now confirm receipt.",
       );
+    } catch (error: any) {
+      console.log("DELIVERY PROOF ERROR:", {
+        message: error?.message,
+        code: error?.code,
+        status: error?.response?.status,
+        response: error?.response?.data,
+      });
+
+      const status = error?.response?.status;
+      const backendMessage = error?.response?.data?.message;
+
+      if (status === 400) {
+        setDeliverError(
+          backendMessage || "The delivery-proof image could not be submitted.",
+        );
+      } else if (status === 403) {
+        setDeliverError(
+          "You are not permitted to submit delivery proof for this escrow.",
+        );
+      } else if (status === 409) {
+        setDeliverError(
+          "Delivery proof has already been submitted for this escrow.",
+        );
+      } else if (status === 413) {
+        setDeliverError("Delivery proof image must be 5MB or smaller.");
+      } else if (status === 415) {
+        setDeliverError(backendMessage || "This image type is not supported.");
+      } else if (status === 500) {
+        setDeliverError(
+          "The server could not save delivery proof. Please try again.",
+        );
+      } else if (!error?.response || error?.code === "ERR_NETWORK") {
+        setDeliverError(
+          "Unable to connect to the server. Please check your connection and try again.",
+        );
+      } else {
+        setDeliverError(backendMessage || "Failed to submit delivery proof.");
+      }
     } finally {
       setDelivering(false);
     }
   };
 
+  /**
+   * Loading state
+   */
   if (loading) {
     return (
       <SafeAreaView className="flex-1 bg-gray-100 items-center justify-center">
-        <Text className="text-gray-400">Loading escrow…</Text>
+        <ShieldCheck size={36} color="#9ca3af" />
+
+        <Text className="text-gray-400 mt-3">Loading escrow…</Text>
       </SafeAreaView>
     );
   }
 
+  /**
+   * Escrow not found
+   */
   if (!escrow) {
     return (
       <SafeAreaView className="flex-1 bg-gray-100 items-center justify-center px-6">
         <TouchableOpacity
           onPress={() => router.back()}
           className="absolute top-10 left-5 p-2"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{
+            top: 10,
+            bottom: 10,
+            left: 10,
+            right: 10,
+          }}
         >
           <ArrowLeft size={22} color="#374151" />
         </TouchableOpacity>
-        <ShieldCheck color="#9ca3af" size={32} />
+
+        <ShieldCheck color="#9ca3af" size={36} />
+
         <Text className="text-gray-500 mt-3 text-center">
-          We couldn&rsquo;t find that escrow transaction.
+          We couldn&#39;t find that escrow transaction.
         </Text>
       </SafeAreaView>
     );
   }
 
-  const isCreator = escrow?.creatorId?.id === user?.id;
-  const role = getRole(escrow, user?.id);
+  /**
+   * Current user / role
+   */
+  const creatorId = getId(escrow.creatorId);
+  const recipientId = getId(escrow.recipientId);
+
+  const currentUserId = user?.id;
+
+  const isCreator =
+    currentUserId !== undefined && String(creatorId) === String(currentUserId);
+
+  const isRecipient =
+    currentUserId !== undefined &&
+    String(recipientId) === String(currentUserId);
+
+  const role = getRole(escrow, currentUserId);
+
   const counterpartyName = getCounterpartyName(escrow, role);
+
+  /**
+   * Escrow status helpers
+   */
+
+  const isFunded = escrow.status === "FUNDED";
+
+  const isDelivered = escrow.status === "DELIVERED";
+
+  const isReleased = escrow.status === "RELEASED";
+
+  const isRefunded = escrow.status === "REFUNDED";
+
+  const isDisputed = escrow.status === "DISPUTED";
+
+  const deliveryProofUrl = getDeliveryProofUrl(escrow.deliveryProofUrl);
 
   return (
     <SafeAreaView className="flex-1 bg-surface">
-      <ScrollView>
-        {/* Header */}
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
+        contentContainerStyle={{
+          paddingBottom: 40,
+        }}
+      >
+        {/* ===================================================== */}
+        {/* HEADER */}
+        {/* ===================================================== */}
+
         <View className="bg-brand px-5 pt-10 pb-8 rounded-b-lg">
           <View className="flex-row items-center">
             <TouchableOpacity
               onPress={() => router.back()}
               className="mr-3 p-1 -ml-1"
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              hitSlop={{
+                top: 10,
+                bottom: 10,
+                left: 10,
+                right: 10,
+              }}
             >
               <ArrowLeft color="white" size={22} />
             </TouchableOpacity>
@@ -169,272 +471,537 @@ const EscrowDetailsScreen = () => {
               <ShieldCheck color="white" size={22} />
             </View>
 
-            <View className="ml-3">
+            <View className="ml-3 flex-1">
               <Text className="text-white text-lg font-semibold">
-                {isCreator ? "Escrow You Funded" : "Escrow Payment for You"}
+                {isCreator ? "Your Escrow" : "Escrow Payment"}
               </Text>
+
               <Text className="text-white/60 text-xs">{escrow.escrowUprn}</Text>
             </View>
 
+            {/* STATUS */}
             <View
-              className={`ml-auto px-3 py-1 rounded-full ${
-                escrow.status === "FUNDED" ? "bg-success" : "bg-ink-muted"
+              className={`px-3 py-1 rounded-full ${
+                isFunded
+                  ? "bg-green-600"
+                  : isDelivered
+                    ? "bg-blue-600"
+                    : isReleased
+                      ? "bg-emerald-700"
+                      : isRefunded
+                        ? "bg-purple-600"
+                        : isDisputed
+                          ? "bg-red-600"
+                          : "bg-gray-500"
               }`}
             >
-              <Text className="text-white text-xs">{escrow.status}</Text>
+              <Text className="text-white text-xs font-semibold">
+                {escrow.status}
+              </Text>
             </View>
           </View>
 
+          {/* AMOUNT */}
           <View className="mt-6">
             <Text className="text-white/60 text-xs uppercase">
-              {isCreator ? "Amount You Secured" : "Amount Owed To You"}
+              {isCreator ? "Amount Secured" : "Amount to Receive"}
             </Text>
+
             <Text className="text-white text-3xl font-bold mt-1">
               {formatMoney(escrow.amount, escrow.currency)}
             </Text>
           </View>
         </View>
 
-        <View className="p-5 space-y-4">
-          {/* Order Card — shared, but labels differ */}
-          <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card">
+        <View className="p-5">
+          {/* ================================================= */}
+          {/* ORDER SUMMARY */}
+          {/* ================================================= */}
+
+          <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card mb-4">
             <Text className="text-gray-400 text-xs uppercase mb-3">
               Order Summary
             </Text>
-            <Row title="Description" value={escrow.description} />
+
+            <Row
+              title="Description"
+              value={escrow.description || "No description"}
+            />
+
             <Row
               title={isCreator ? "Seller" : "Buyer"}
-              value={counterpartyName}
+              value={counterpartyName || "Unknown"}
             />
+
+            <Row
+              title="Amount"
+              value={formatMoney(escrow.amount, escrow.currency)}
+            />
+
             <Row title="Currency" value={escrow.currency} />
+
             <Row title="Expires" value={formatDate(escrow.expiryDate)} />
+
             <Row title="Status" value={escrow.status} />
           </View>
 
-          {/* CREATOR (buyer) view */}
+          {/* ================================================= */}
+          {/* BUYER INFORMATION */}
+          {/* ================================================= */}
+
           {isCreator && (
             <>
-              <View className="bg-green-50 rounded-md p-4 flex-row items-center">
-                <View className="bg-success p-3 rounded-full">
-                  <Lock size={20} color="white" />
-                </View>
-                <View className="ml-3 flex-1">
-                  <Text className="font-semibold text-green-700">
-                    Payment secured
-                  </Text>
-                  <Text className="text-gray-600 text-xs mt-1">
-                    Funds are held until you confirm delivery.
-                  </Text>
-                </View>
-              </View>
+              {/* FUNDED */}
+              {isFunded && (
+                <View className="bg-green-50 rounded-2xl p-4 flex-row items-center mb-4">
+                  <View className="bg-green-600 p-3 rounded-full">
+                    <Lock size={20} color="white" />
+                  </View>
 
-              <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card">
+                  <View className="ml-3 flex-1">
+                    <Text className="font-semibold text-green-700">
+                      Payment secured
+                    </Text>
+
+                    <Text className="text-gray-600 text-xs mt-1">
+                      Your payment is safely held in escrow until you confirm
+                      receipt.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* DELIVERED */}
+              {isDelivered && (
+                <View className="bg-blue-50 rounded-2xl p-4 flex-row items-center mb-4">
+                  <View className="bg-blue-600 p-3 rounded-full">
+                    <PackageCheck size={20} color="white" />
+                  </View>
+
+                  <View className="ml-3 flex-1">
+                    <Text className="font-semibold text-blue-700">
+                      Seller marked the order delivered
+                    </Text>
+
+                    <Text className="text-gray-600 text-xs mt-1">
+                      Review the delivery proof and confirm receipt if you have
+                      received your order.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* RELEASED */}
+              {isReleased && (
+                <View className="bg-emerald-50 rounded-2xl p-4 flex-row items-center mb-4">
+                  <View className="bg-emerald-600 p-3 rounded-full">
+                    <CheckCircle size={20} color="white" />
+                  </View>
+
+                  <View className="ml-3 flex-1">
+                    <Text className="font-semibold text-emerald-700">
+                      Transaction completed
+                    </Text>
+
+                    <Text className="text-gray-600 text-xs mt-1">
+                      You confirmed receipt and the escrow funds were released
+                      to the seller.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* ================================================= */}
+              {/* BUYER TIMELINE */}
+              {/* ================================================= */}
+
+              <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card mb-4">
                 <Text className="text-gray-400 text-xs uppercase mb-4">
-                  Progress
+                  Transaction Progress
                 </Text>
-                <Timeline done text="Quote accepted" />
-                <Timeline done text="Invoice generated" />
-                <Timeline done text="Payment completed" />
-                <Timeline
-                  done={escrow.status === "DELIVERED"}
-                  active={escrow.status === "FUNDED"}
-                  text="Seller marks delivery"
+
+                <EscrowTimeline completed={true} text="Quote accepted" />
+
+                <EscrowTimeline completed={true} text="Invoice generated" />
+
+                <EscrowTimeline
+                  completed={isFunded || isDelivered || isReleased}
+                  text="Payment secured"
                 />
-                <Timeline
-                  active={escrow.status === "DELIVERED"}
-                  text="Funds released"
+
+                <EscrowTimeline
+                  completed={isDelivered || isReleased}
+                  active={isFunded}
+                  text="Seller delivers order"
+                />
+
+                <EscrowTimeline
+                  completed={isReleased}
+                  active={isDelivered}
+                  text="Buyer confirms receipt"
+                />
+
+                <EscrowTimeline
+                  completed={isReleased}
+                  text="Funds released to seller"
                 />
               </View>
 
-              {escrow.status === "DELIVERED" && escrow.deliveryProofUrl ? (
-                <View className="bg-white rounded-2xl p-5">
-                  <Text className="font-semibold mb-3">
-                    Delivery Proof Submitted
-                  </Text>
+              {/* ================================================= */}
+              {/* DELIVERY PROOF */}
+              {/* ================================================= */}
+
+              {deliveryProofUrl && (
+                <View className="bg-white rounded-2xl p-5 mb-4">
+                  <View className="flex-row items-center mb-3">
+                    <Truck size={20} color="#4f46e5" />
+
+                    <Text className="font-semibold ml-2">Delivery Proof</Text>
+                  </View>
+
                   <Image
-                    source={{ uri: escrow.deliveryProofUrl }}
-                    className="w-full h-48 rounded-xl"
+                    source={{
+                      uri: deliveryProofUrl,
+                    }}
+                    className="w-full h-56 rounded-xl"
                     resizeMode="cover"
                   />
+
+                  {escrow.sellerDeliveredAt && (
+                    <Text className="text-gray-400 text-xs mt-2">
+                      Delivered on {formatDate(escrow.sellerDeliveredAt)}
+                    </Text>
+                  )}
                 </View>
-              ) : (
-                <View className="bg-blue-100 rounded-2xl p-4">
-                  <Text className="font-semibold text-blue-700">Next step</Text>
-                  <Text className="text-gray-700 text-sm mt-2">
-                    Once the seller marks the order delivered, you can confirm
-                    receipt to release funds to them.
+              )}
+
+              {/* ================================================= */}
+              {/* BUYER ACTION */}
+              {/* ================================================= */}
+
+              {isDelivered && (
+                <TouchableOpacity
+                  onPress={() => setShowConfirmModal(true)}
+                  disabled={confirmingReceipt}
+                  className="bg-brand rounded-2xl py-4 items-center mb-4"
+                >
+                  <View className="flex-row items-center">
+                    <PackageCheck size={19} color="white" />
+
+                    <Text className="text-white font-semibold ml-2">
+                      Confirm Receipt
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {/* WAITING */}
+              {isFunded && (
+                <View className="bg-blue-50 rounded-2xl p-4 mb-4">
+                  <Text className="font-semibold text-blue-700">
+                    Waiting for seller
+                  </Text>
+
+                  <Text className="text-gray-600 text-sm mt-1">
+                    The seller needs to submit delivery proof before you can
+                    confirm receipt.
                   </Text>
                 </View>
               )}
 
-              <View className="bg-white rounded-2xl p-5 flex-row items-center">
-                <FileText size={25} color="#4f46e5" />
-                <View className="ml-3">
-                  <Text className="font-semibold">Invoice Document</Text>
-                  <Text className="text-gray-400 text-xs">
-                    View payment invoice
+              {/* COMPLETED */}
+              {isReleased && (
+                <View className="bg-emerald-50 rounded-2xl p-4 mb-4">
+                  <Text className="font-semibold text-emerald-700">
+                    Receipt confirmed
                   </Text>
-                </View>
-              </View>
 
-              <TouchableOpacity
-                disabled={escrow.status !== "DELIVERED"}
-                onPress={() => setShowReleaseModal(true)}
-                className={`rounded-2xl py-4 items-center mt-3 ${
-                  escrow.status === "DELIVERED" ? "bg-brand" : "bg-slate-300"
-                }`}
-              >
-                <View className="flex-row items-center">
-                  <PackageCheck size={18} color="white" />
-                  <Text className="text-white font-semibold ml-2">
-                    {escrow.status === "DELIVERED"
-                      ? "Confirm Delivery"
-                      : "Waiting for Seller Delivery"}
+                  <Text className="text-gray-600 text-sm mt-1">
+                    The transaction has been completed and the seller has
+                    received the escrow funds.
                   </Text>
                 </View>
-              </TouchableOpacity>
+              )}
             </>
           )}
 
-          {/* RECIPIENT (seller) view */}
-          {!isCreator && (
-            <>
-              <View className="bg-blue-100 rounded-md p-4 flex-row items-center">
-                <View className="bg-brand-light p-3 rounded-full">
-                  <Wallet size={20} color="white" />
-                </View>
-                <View className="ml-3 flex-1">
-                  <Text className="font-semibold text-indigo-700">
-                    Funds reserved for you
-                  </Text>
-                  <Text className="text-gray-600 text-xs mt-1">
-                    {formatMoney(escrow.currentBalance, escrow.currency)} will
-                    be released once the buyer confirms delivery.
-                  </Text>
-                </View>
-              </View>
+          {/* ================================================= */}
+          {/* SELLER INFORMATION */}
+          {/* ================================================= */}
 
-              <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card">
+          {isRecipient && (
+            <>
+              {/* FUNDED */}
+              {isFunded && (
+                <View className="bg-blue-50 rounded-2xl p-4 flex-row items-center mb-4">
+                  <View className="bg-blue-600 p-3 rounded-full">
+                    <Wallet size={20} color="white" />
+                  </View>
+
+                  <View className="ml-3 flex-1">
+                    <Text className="font-semibold text-blue-700">
+                      Funds reserved for you
+                    </Text>
+
+                    <Text className="text-gray-600 text-xs mt-1">
+                      {formatMoney(escrow.currentBalance, escrow.currency)} is
+                      being held securely until the buyer confirms receipt.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* DELIVERED */}
+              {isDelivered && (
+                <View className="bg-yellow-50 rounded-2xl p-4 flex-row items-center mb-4">
+                  <View className="bg-yellow-500 p-3 rounded-full">
+                    <Truck size={20} color="white" />
+                  </View>
+
+                  <View className="ml-3 flex-1">
+                    <Text className="font-semibold text-yellow-700">
+                      Delivery submitted
+                    </Text>
+
+                    <Text className="text-gray-600 text-xs mt-1">
+                      Your delivery proof has been submitted. Waiting for the
+                      buyer to confirm receipt.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* RELEASED */}
+              {isReleased && (
+                <View className="bg-emerald-50 rounded-2xl p-4 flex-row items-center mb-4">
+                  <View className="bg-emerald-600 p-3 rounded-full">
+                    <CheckCircle size={20} color="white" />
+                  </View>
+
+                  <View className="ml-3 flex-1">
+                    <Text className="font-semibold text-emerald-700">
+                      Funds released
+                    </Text>
+
+                    <Text className="text-gray-600 text-xs mt-1">
+                      The buyer confirmed receipt and the escrow funds have been
+                      released to you.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* ================================================= */}
+              {/* SELLER TIMELINE */}
+              {/* ================================================= */}
+
+              <View className="bg-surface-card rounded-md border border-surface-border p-5 shadow-card mb-4">
                 <Text className="text-gray-400 text-xs uppercase mb-4">
-                  Progress
+                  Transaction Progress
                 </Text>
-                <Timeline done text="Quote accepted" />
-                <Timeline done text="Invoice generated" />
-                <Timeline done text="Buyer payment received" />
-                <Timeline
-                  done={escrow.status === "DELIVERED"}
-                  active={escrow.status === "FUNDED"}
+
+                <EscrowTimeline completed={true} text="Quote accepted" />
+
+                <EscrowTimeline completed={true} text="Invoice generated" />
+
+                <EscrowTimeline
+                  completed={isFunded || isDelivered || isReleased}
+                  text="Buyer payment secured"
+                />
+
+                <EscrowTimeline
+                  completed={isDelivered || isReleased}
+                  active={isFunded}
                   text="Deliver product/service"
                 />
-                <Timeline
-                  active={escrow.status === "DELIVERED"}
+
+                <EscrowTimeline
+                  completed={isReleased}
+                  active={isDelivered}
+                  text="Buyer confirms receipt"
+                />
+
+                <EscrowTimeline
+                  completed={isReleased}
                   text="Funds released to you"
                 />
               </View>
 
-              <View className="bg-yellow-100 rounded-2xl p-4">
-                <Text className="font-semibold text-yellow-700">
-                  {escrow.status === "DELIVERED"
-                    ? "Delivery submitted"
-                    : "Action required"}
-                </Text>
-                <Text className="text-gray-700 text-sm mt-2">
-                  {escrow.status === "DELIVERED"
-                    ? "You've submitted delivery proof. Your payout will be released once the buyer confirms receipt."
-                    : "Deliver the item to the buyer, then mark it as delivered. Your payout is released after buyer confirmation."}
-                </Text>
-              </View>
+              {/* ================================================= */}
+              {/* SELLER DELIVERY PROOF */}
+              {/* ================================================= */}
 
-              {escrow.status === "DELIVERED" && escrow.deliveryProofUrl && (
-                <View className="bg-white rounded-2xl p-5">
-                  <Text className="font-semibold mb-3">
-                    Your Delivery Proof
-                  </Text>
+              {deliveryProofUrl && (
+                <View className="bg-white rounded-2xl p-5 mb-4">
+                  <View className="flex-row items-center mb-3">
+                    <Truck size={20} color="#4f46e5" />
+
+                    <Text className="font-semibold ml-2">
+                      Your Delivery Proof
+                    </Text>
+                  </View>
+
                   <Image
-                    source={{ uri: escrow.deliveryProofUrl }}
-                    className="w-full h-48 rounded-xl"
+                    source={{
+                      uri: deliveryProofUrl,
+                    }}
+                    className="w-full h-56 rounded-xl"
                     resizeMode="cover"
                   />
+
+                  {escrow.sellerDeliveredAt && (
+                    <Text className="text-gray-400 text-xs mt-2">
+                      Submitted on {formatDate(escrow.sellerDeliveredAt)}
+                    </Text>
+                  )}
                 </View>
               )}
 
-              <View className="bg-white rounded-2xl p-5 flex-row items-center">
-                <FileText size={25} color="#4f46e5" />
-                <View className="ml-3">
-                  <Text className="font-semibold">Invoice Document</Text>
-                  <Text className="text-gray-400 text-xs">
-                    View invoice sent to buyer
-                  </Text>
-                </View>
-              </View>
+              {/* ================================================= */}
+              {/* SELLER ACTION */}
+              {/* ================================================= */}
 
-              <TouchableOpacity
-                disabled={escrow.status !== "FUNDED"}
-                onPress={() => setShowDeliverModal(true)}
-                className={`rounded-2xl py-4 items-center mt-3 ${
-                  escrow.status === "FUNDED" ? "bg-brand" : "bg-slate-300"
-                }`}
-              >
-                <View className="flex-row items-center">
-                  <Truck size={18} color="white" />
-                  <Text className="text-white font-semibold ml-2">
-                    {escrow.status === "FUNDED"
-                      ? "Mark Delivered"
-                      : escrow.status === "DELIVERED"
-                        ? "Delivery Submitted"
-                        : "Mark Delivered"}
+              {isFunded && (
+                <TouchableOpacity
+                  onPress={() => setShowDeliverModal(true)}
+                  disabled={delivering}
+                  className="bg-brand rounded-2xl py-4 items-center mb-4"
+                >
+                  <View className="flex-row items-center">
+                    <Truck size={19} color="white" />
+
+                    <Text className="text-white font-semibold ml-2">
+                      Mark Delivered
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {isDelivered && (
+                <View className="bg-yellow-50 rounded-2xl p-4 mb-4">
+                  <Text className="font-semibold text-yellow-700">
+                    Waiting for buyer confirmation
+                  </Text>
+
+                  <Text className="text-gray-600 text-sm mt-1">
+                    You have submitted your delivery proof. The buyer must
+                    confirm receipt before the funds are released.
                   </Text>
                 </View>
-              </TouchableOpacity>
+              )}
+
+              {isReleased && (
+                <View className="bg-emerald-50 rounded-2xl p-4 mb-4">
+                  <Text className="font-semibold text-emerald-700">
+                    Transaction completed
+                  </Text>
+
+                  <Text className="text-gray-600 text-sm mt-1">
+                    The buyer confirmed receipt and the funds have been released
+                    to your account.
+                  </Text>
+                </View>
+              )}
             </>
           )}
+
+          {/* ================================================= */}
+          {/* INVOICE */}
+          {/* ================================================= */}
+
+          <View className="bg-white rounded-2xl p-5 flex-row items-center mb-4">
+            <FileText size={25} color="#4f46e5" />
+
+            <View className="ml-3 flex-1">
+              <Text className="font-semibold">Invoice Document</Text>
+
+              <Text className="text-gray-400 text-xs mt-1">
+                {isCreator
+                  ? "View your payment invoice"
+                  : "View invoice sent to buyer"}
+              </Text>
+            </View>
+          </View>
         </View>
       </ScrollView>
 
+      {/* ===================================================== */}
+      {/* BUYER CONFIRM RECEIPT MODAL */}
+      {/* ===================================================== */}
+
       <ConfirmModal
-        visible={showReleaseModal}
-        title="Confirm Delivery"
-        message="This will release the funds to the seller. Only confirm once you've received your order."
+        visible={showConfirmModal}
+        title="Confirm Receipt"
+        message={`Please confirm that you have received your order. This will release ${formatMoney(
+          escrow.amount,
+          escrow.currency,
+        )} to the seller. This action cannot be undone.`}
         icon="package"
         danger={false}
-        confirmLabel={releasing ? "Releasing…" : "Confirm & Release"}
-        onCancel={() => setShowReleaseModal(false)}
-        onConfirm={handleConfirmDelivery}
+        confirmLabel={confirmingReceipt ? "Confirming…" : "Confirm Receipt"}
+        onCancel={() => {
+          if (!confirmingReceipt) {
+            setShowConfirmModal(false);
+          }
+        }}
+        onConfirm={handleConfirmReceipt}
       />
 
-      {/* Seller: submit delivery-proof image */}
-      <Modal visible={showDeliverModal} transparent animationType="fade">
+      {/* ===================================================== */}
+      {/* SELLER DELIVERY MODAL */}
+      {/* ===================================================== */}
+
+      <Modal
+        visible={showDeliverModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDeliverModal}
+      >
         <View className="flex-1 bg-black/50 items-center justify-center px-6">
           <View className="bg-white rounded-2xl p-5 w-full">
             <Text className="text-lg font-semibold mb-1">
               Submit Delivery Proof
             </Text>
+
             <Text className="text-gray-500 text-sm mb-4">
-              Upload a photo showing the item was delivered. This can&rsquo;t be
-              undone or changed later.
+              Upload a photo showing that the order was delivered to the buyer.
             </Text>
 
+            {/* IMAGE PICKER */}
             <TouchableOpacity
               onPress={handlePickProofImage}
+              disabled={delivering}
               className="border border-dashed border-slate-300 rounded-xl h-40 items-center justify-center overflow-hidden"
             >
               {proofImage ? (
                 <Image
-                  source={{ uri: proofImage }}
+                  source={{
+                    uri: proofImage.uri,
+                  }}
                   className="w-full h-full"
                   resizeMode="cover"
                 />
               ) : (
-                <Text className="text-slate-400 text-sm">
-                  Tap to choose a photo
-                </Text>
+                <View className="items-center">
+                  <Truck size={30} color="#94a3b8" />
+
+                  <Text className="text-slate-400 text-sm mt-2">
+                    Tap to choose a photo
+                  </Text>
+
+                  <Text className="text-slate-400 text-xs mt-1">
+                    JPG, PNG or WEBP • Max 5MB
+                  </Text>
+                </View>
               )}
             </TouchableOpacity>
 
+            {/* ERROR */}
             {deliverError && (
               <Text className="text-red-500 text-xs mt-2">{deliverError}</Text>
             )}
 
+            {/* BUTTONS */}
             <View className="flex-row mt-5 gap-3">
               <TouchableOpacity
                 onPress={closeDeliverModal}
@@ -443,15 +1010,16 @@ const EscrowDetailsScreen = () => {
               >
                 <Text className="text-slate-700 font-semibold">Cancel</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
                 onPress={handleMarkDelivered}
                 disabled={delivering || !proofImage}
                 className={`flex-1 py-3 rounded-xl items-center ${
-                  proofImage ? "bg-brand" : "bg-slate-300"
+                  proofImage && !delivering ? "bg-brand" : "bg-slate-300"
                 }`}
               >
                 <Text className="text-white font-semibold">
-                  {delivering ? "Submitting…" : "Submit"}
+                  {delivering ? "Submitting…" : "Submit Delivery"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -459,6 +1027,52 @@ const EscrowDetailsScreen = () => {
         </View>
       </Modal>
     </SafeAreaView>
+  );
+};
+
+/**
+ * ============================================================
+ * ESCROW TIMELINE ITEM
+ * ============================================================
+ */
+
+const EscrowTimeline = ({
+  text,
+  completed = false,
+  active = false,
+}: {
+  text: string;
+  completed?: boolean;
+  active?: boolean;
+}) => {
+  return (
+    <View className="flex-row items-center mb-5">
+      <View
+        className={`w-9 h-9 rounded-full items-center justify-center ${
+          completed ? "bg-green-100" : active ? "bg-blue-100" : "bg-gray-100"
+        }`}
+      >
+        {completed ? (
+          <CheckCircle size={18} color="#16a34a" />
+        ) : active ? (
+          <Truck size={18} color="#2563eb" />
+        ) : (
+          <View className="w-2.5 h-2.5 rounded-full bg-gray-300" />
+        )}
+      </View>
+
+      <Text
+        className={`ml-3 text-sm ${
+          completed
+            ? "text-green-700 font-medium"
+            : active
+              ? "text-blue-700 font-semibold"
+              : "text-gray-500"
+        }`}
+      >
+        {text}
+      </Text>
+    </View>
   );
 };
 
