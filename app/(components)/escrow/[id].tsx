@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from "expo-router";
 import {
+  AlertTriangle,
   ArrowLeft,
   CheckCircle,
   FileText,
@@ -8,6 +9,7 @@ import {
   ShieldCheck,
   Truck,
   Wallet,
+  XCircle,
 } from "lucide-react-native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -18,6 +20,7 @@ import {
   SafeAreaView,
   ScrollView,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -26,6 +29,7 @@ import * as ImagePicker from "expo-image-picker";
 
 import {
   confirmEscrowReceipt,
+  disputeEscrow,
   getDeliveryProofUrl,
   getEscrowById,
   markEscrowDelivered,
@@ -59,6 +63,12 @@ const EscrowDetailsScreen = () => {
   // Buyer confirmation
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmingReceipt, setConfirmingReceipt] = useState(false);
+
+  // Buyer dispute
+  const [showDisputeModal, setShowDisputeModal] = useState(false);
+  const [disputeReason, setDisputeReason] = useState("");
+  const [disputing, setDisputing] = useState(false);
+  const [disputeError, setDisputeError] = useState<string | null>(null);
 
   // Seller delivery
   const [showDeliverModal, setShowDeliverModal] = useState(false);
@@ -118,7 +128,7 @@ const EscrowDetailsScreen = () => {
   };
 
   /**
-   * BUYER:
+   * BUYER (recipient):
    * Confirm receipt.
    *
    * Backend:
@@ -129,7 +139,7 @@ const EscrowDetailsScreen = () => {
   const handleConfirmReceipt = async () => {
     if (!escrowId) return;
 
-    if (!isCreator) {
+    if (!isRecipient) {
       Alert.alert("Not Allowed", "Only the buyer can confirm receipt.");
       return;
     }
@@ -203,7 +213,101 @@ const EscrowDetailsScreen = () => {
   };
 
   /**
-   * SELLER:
+   * BUYER (recipient):
+   * Close dispute modal
+   */
+  const closeDisputeModal = () => {
+    if (disputing) return;
+
+    setShowDisputeModal(false);
+    setDisputeReason("");
+    setDisputeError(null);
+  };
+
+  /**
+   * BUYER (recipient):
+   * Submit a dispute with a reason.
+   *
+   * Backend:
+   * POST /escrow/:id/dispute
+   * body: { reason }
+   *
+   * Only valid while escrow is FUNDED or DELIVERED (see disputeEscrow controller).
+   */
+  const handleSubmitDispute = async () => {
+    if (!escrowId) return;
+
+    const trimmedReason = disputeReason.trim();
+
+    if (!trimmedReason) {
+      setDisputeError("Please tell us why you're disputing this order.");
+      return;
+    }
+
+    if (!isRecipient) {
+      setDisputeError("Only the buyer can dispute this escrow.");
+      return;
+    }
+
+    if (escrow?.status !== "DELIVERED" && escrow?.status !== "FUNDED") {
+      setDisputeError(
+        "This escrow can no longer be disputed in its current state.",
+      );
+      return;
+    }
+
+    setDisputing(true);
+    setDisputeError(null);
+
+    try {
+      const updatedEscrow = await disputeEscrow(escrowId, trimmedReason);
+
+      if (updatedEscrow) {
+        setEscrow(updatedEscrow);
+      }
+
+      setShowDisputeModal(false);
+      setDisputeReason("");
+
+      await loadEscrow(false);
+
+      Alert.alert(
+        "Dispute Submitted",
+        "Your dispute has been submitted. Our team will review it and follow up with both parties.",
+      );
+    } catch (error: any) {
+      console.log("DISPUTE ESCROW ERROR:", {
+        message: error?.message,
+        status: error?.response?.status,
+        response: error?.response?.data,
+      });
+
+      const status = error?.response?.status;
+      const backendMessage = error?.response?.data?.message;
+
+      if (status === 403) {
+        setDisputeError("Only the buyer can dispute this escrow.");
+      } else if (status === 400) {
+        setDisputeError(
+          backendMessage ||
+            "This escrow can no longer be disputed in its current state.",
+        );
+      } else if (status === 404) {
+        setDisputeError("This escrow could no longer be found.");
+      } else if (!error?.response || error?.code === "ERR_NETWORK") {
+        setDisputeError(
+          "Unable to connect to the server. Please check your connection and try again.",
+        );
+      } else {
+        setDisputeError(backendMessage || "Failed to submit dispute.");
+      }
+    } finally {
+      setDisputing(false);
+    }
+  };
+
+  /**
+   * SELLER (creator):
    * Pick delivery proof image
    */
   const handlePickProofImage = async () => {
@@ -263,7 +367,7 @@ const EscrowDetailsScreen = () => {
   };
 
   /**
-   * SELLER:
+   * SELLER (creator):
    * Submit delivery proof
    */
   const handleMarkDelivered = async () => {
@@ -274,7 +378,7 @@ const EscrowDetailsScreen = () => {
       return;
     }
 
-    if (!isRecipient) {
+    if (!isCreator) {
       setDeliverError(
         "Only the seller can submit delivery proof for this escrow.",
       );
@@ -405,6 +509,10 @@ const EscrowDetailsScreen = () => {
 
   /**
    * Current user / role
+   *
+   * Backend contract (see escrowController.js):
+   *   creatorId   = SELLER (the quote's user_data / the party who gets paid)
+   *   recipientId = BUYER  (quote's destinatary_user / the party who pays & confirms receipt)
    */
   const creatorId = getId(escrow.creatorId);
   const recipientId = getId(escrow.recipientId);
@@ -417,6 +525,9 @@ const EscrowDetailsScreen = () => {
   const isRecipient =
     currentUserId !== undefined &&
     String(recipientId) === String(currentUserId);
+
+  // isCreator  -> seller
+  // isRecipient -> buyer
 
   const role = getRole(escrow, currentUserId);
 
@@ -435,6 +546,10 @@ const EscrowDetailsScreen = () => {
   const isRefunded = escrow.status === "REFUNDED";
 
   const isDisputed = escrow.status === "DISPUTED";
+
+  // Buyer can dispute once funds are secured, whether or not delivery has
+  // happened yet — matches the backend's FUNDED || DELIVERED guard.
+  const canDispute = isFunded || isDelivered;
 
   const deliveryProofUrl = getDeliveryProofUrl(escrow.deliveryProofUrl);
 
@@ -473,7 +588,7 @@ const EscrowDetailsScreen = () => {
 
             <View className="ml-3 flex-1">
               <Text className="text-white text-lg font-semibold">
-                {isCreator ? "Your Escrow" : "Escrow Payment"}
+                {isRecipient ? "Your Escrow" : "Escrow Payment"}
               </Text>
 
               <Text className="text-white/60 text-xs">{escrow.escrowUprn}</Text>
@@ -504,7 +619,7 @@ const EscrowDetailsScreen = () => {
           {/* AMOUNT */}
           <View className="mt-6">
             <Text className="text-white/60 text-xs uppercase">
-              {isCreator ? "Amount Secured" : "Amount to Receive"}
+              {isRecipient ? "Amount Secured" : "Amount to Receive"}
             </Text>
 
             <Text className="text-white text-3xl font-bold mt-1">
@@ -529,7 +644,7 @@ const EscrowDetailsScreen = () => {
             />
 
             <Row
-              title={isCreator ? "Seller" : "Buyer"}
+              title={isRecipient ? "Seller" : "Buyer"}
               value={counterpartyName || "Unknown"}
             />
 
@@ -546,10 +661,34 @@ const EscrowDetailsScreen = () => {
           </View>
 
           {/* ================================================= */}
-          {/* BUYER INFORMATION */}
+          {/* DISPUTED (either side) */}
           {/* ================================================= */}
 
-          {isCreator && (
+          {isDisputed && (
+            <View className="bg-red-50 rounded-2xl p-4 flex-row items-center mb-4">
+              <View className="bg-red-600 p-3 rounded-full">
+                <AlertTriangle size={20} color="white" />
+              </View>
+
+              <View className="ml-3 flex-1">
+                <Text className="font-semibold text-red-700">
+                  Escrow disputed
+                </Text>
+
+                <Text className="text-gray-600 text-xs mt-1">
+                  {escrow.metadata?.disputeReason
+                    ? `Reason: ${escrow.metadata.disputeReason}`
+                    : "This escrow is under review. Our team will follow up with both parties."}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* ================================================= */}
+          {/* BUYER (recipient) INFORMATION */}
+          {/* ================================================= */}
+
+          {isRecipient && (
             <>
               {/* FUNDED */}
               {isFunded && (
@@ -584,8 +723,9 @@ const EscrowDetailsScreen = () => {
                     </Text>
 
                     <Text className="text-gray-600 text-xs mt-1">
-                      Review the delivery proof and confirm receipt if you have
-                      received your order.
+                      Review the delivery proof below. If everything checks out,
+                      confirm receipt. If something&#39;s wrong, you can dispute
+                      instead.
                     </Text>
                   </View>
                 </View>
@@ -676,20 +816,36 @@ const EscrowDetailsScreen = () => {
               )}
 
               {/* ================================================= */}
-              {/* BUYER ACTION */}
+              {/* BUYER ACTIONS */}
               {/* ================================================= */}
 
               {isDelivered && (
                 <TouchableOpacity
                   onPress={() => setShowConfirmModal(true)}
                   disabled={confirmingReceipt}
-                  className="bg-brand rounded-2xl py-4 items-center mb-4"
+                  className="bg-brand rounded-2xl py-4 items-center mb-3"
                 >
                   <View className="flex-row items-center">
                     <PackageCheck size={19} color="white" />
 
                     <Text className="text-white font-semibold ml-2">
                       Confirm Receipt
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {canDispute && (
+                <TouchableOpacity
+                  onPress={() => setShowDisputeModal(true)}
+                  disabled={disputing}
+                  className="border border-red-300 rounded-2xl py-4 items-center mb-4"
+                >
+                  <View className="flex-row items-center">
+                    <AlertTriangle size={19} color="#dc2626" />
+
+                    <Text className="text-red-600 font-semibold ml-2">
+                      Dispute Escrow
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -704,7 +860,8 @@ const EscrowDetailsScreen = () => {
 
                   <Text className="text-gray-600 text-sm mt-1">
                     The seller needs to submit delivery proof before you can
-                    confirm receipt.
+                    confirm receipt. If you believe there&lsquo;s a problem with
+                    this order already, you can raise a dispute above.
                   </Text>
                 </View>
               )}
@@ -726,10 +883,10 @@ const EscrowDetailsScreen = () => {
           )}
 
           {/* ================================================= */}
-          {/* SELLER INFORMATION */}
+          {/* SELLER (creator) INFORMATION */}
           {/* ================================================= */}
 
-          {isRecipient && (
+          {isCreator && (
             <>
               {/* FUNDED */}
               {isFunded && (
@@ -916,7 +1073,7 @@ const EscrowDetailsScreen = () => {
               <Text className="font-semibold">Invoice Document</Text>
 
               <Text className="text-gray-400 text-xs mt-1">
-                {isCreator
+                {isRecipient
                   ? "View your payment invoice"
                   : "View invoice sent to buyer"}
               </Text>
@@ -946,6 +1103,81 @@ const EscrowDetailsScreen = () => {
         }}
         onConfirm={handleConfirmReceipt}
       />
+
+      {/* ===================================================== */}
+      {/* BUYER DISPUTE MODAL */}
+      {/* ===================================================== */}
+
+      <Modal
+        visible={showDisputeModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeDisputeModal}
+      >
+        <View className="flex-1 bg-black/50 items-center justify-center px-6">
+          <View className="bg-white rounded-2xl p-5 w-full">
+            <View className="flex-row items-center mb-1">
+              <XCircle size={20} color="#dc2626" />
+
+              <Text className="text-lg font-semibold ml-2">Dispute Escrow</Text>
+            </View>
+
+            <Text className="text-gray-500 text-sm mb-4">
+              Tell us what&#39;s wrong with this order. This will pause the
+              escrow and flag it for review — the seller will be notified.
+            </Text>
+
+            {/* REASON INPUT */}
+            <TextInput
+              value={disputeReason}
+              onChangeText={(text) => {
+                setDisputeReason(text);
+
+                if (disputeError) {
+                  setDisputeError(null);
+                }
+              }}
+              placeholder="e.g. Item arrived damaged, wrong item sent…"
+              placeholderTextColor="#9ca3af"
+              multiline
+              numberOfLines={4}
+              editable={!disputing}
+              className="border border-slate-200 rounded-xl px-4 py-3 text-slate-800"
+              style={{ minHeight: 100, textAlignVertical: "top" }}
+            />
+
+            {/* ERROR */}
+            {disputeError && (
+              <Text className="text-red-500 text-xs mt-2">{disputeError}</Text>
+            )}
+
+            {/* BUTTONS */}
+            <View className="flex-row mt-5 gap-3">
+              <TouchableOpacity
+                onPress={closeDisputeModal}
+                disabled={disputing}
+                className="flex-1 py-3 rounded-xl items-center bg-slate-100"
+              >
+                <Text className="text-slate-700 font-semibold">Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleSubmitDispute}
+                disabled={disputing || !disputeReason.trim()}
+                className={`flex-1 py-3 rounded-xl items-center ${
+                  disputeReason.trim() && !disputing
+                    ? "bg-red-600"
+                    : "bg-red-200"
+                }`}
+              >
+                <Text className="text-white font-semibold">
+                  {disputing ? "Submitting…" : "Submit Dispute"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ===================================================== */}
       {/* SELLER DELIVERY MODAL */}

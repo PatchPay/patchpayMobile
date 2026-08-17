@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import { router } from "expo-router";
 import { ArrowLeft, ChevronRight, ShieldCheck } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
@@ -37,11 +36,22 @@ const EscrowListScreen = () => {
   const [filter, setFilter] = useState<FilterTab>("all");
 
   useEffect(() => {
+    // Backend contract: creatorId = seller, recipientId = buyer (see escrowController.js)
+
+    let cancelled = false;
+
     const loadEscrows = async () => {
       try {
+        setLoading(true);
+
         const result = await getMyEscrow();
 
-        console.log("MY ESCROWS:", result);
+        console.log("MY ESCROWS RAW:", result);
+
+        console.log(
+          "MY ESCROWS IDS:",
+          result?.map((e: any) => e.id),
+        );
 
         result?.forEach((escrow: any) => {
           console.log("ESCROW ROLE:", {
@@ -53,15 +63,29 @@ const EscrowListScreen = () => {
           });
         });
 
-        setEscrows(result || []);
+        if (!cancelled) {
+          setEscrows(result || []);
+        }
       } catch (err) {
-        console.log(err);
+        console.log("GET MY ESCROWS ERROR:", err);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
-    loadEscrows();
-  }, []);
+
+    // Don't fetch until we actually know who the user is —
+    // fetching too early with user?.id undefined can lead to
+    // role checks and any user-scoped query params being wrong.
+    if (user?.id !== undefined && user?.id !== null) {
+      loadEscrows();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const filtered = escrows.filter((escrow) => {
     if (filter === "all") {

@@ -83,6 +83,10 @@ export interface Invoice {
 
   status: string;
   paymentStatus?: InvoicePaymentStatus;
+  /** Seller; retained by the backend under this legacy field name. */
+  requesterId?: string | number | InvoiceUser;
+  /** Buyer and only party allowed to initiate payment. */
+  recipientId?: string | number | InvoiceUser;
 
   description: string;
 

@@ -39,16 +39,21 @@ export const verifyEmail = async (payload: {
   otp: string;
   countryCode?: string;
 }) => {
-  const { data } = await API.post("/users/verify-email", payload);
-  return data;
-};
+  try {
+    const response = await API.post("/users/verify-email", payload);
 
-export const resendOtp = async (email: string) => {
-  const { data } = await API.post("/users/resend-otp", {
-    email,
-  });
+    console.log("📥 Verify Email Status:", response.status);
+    console.log("📥 Verify Email Response:", response.data);
 
-  return data;
+    return response;
+  } catch (error: any) {
+    console.error(
+      "❌ Verify Email Error:",
+      error?.response?.data || error?.message || error,
+    );
+
+    throw error;
+  }
 };
 
 // ===============================
@@ -127,6 +132,17 @@ export const updateUser = async (data: {
       Authorization: `Bearer ${await AsyncStorage.getItem("token")}`,
     },
   });
+
+  return res.data;
+};
+
+export const resendOtp = async (email: string) => {
+  const res = await API.post("/users/resend-otp", {
+    email,
+  });
+
+  console.log("📥 Resend OTP Status:", res.status);
+  console.log("📥 Resend OTP Response:", res.data);
 
   return res.data;
 };

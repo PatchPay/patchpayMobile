@@ -24,9 +24,7 @@ export const formatDate = (iso: string) => {
 };
 
 export const getId = (value: any) =>
-  typeof value === "object" && value !== null
-    ? (value.id ?? value._id)
-    : value;
+  typeof value === "object" && value !== null ? (value.id ?? value._id) : value;
 
 export const getRole = (
   escrow: any,
@@ -49,23 +47,23 @@ export const getRole = (
   });
 
   if (String(creatorId) === String(userId)) {
-    return "buyer";
+    return "seller";
   }
 
   if (String(recipientId) === String(userId)) {
-    return "seller";
+    return "buyer";
   }
 
   return "seller";
 };
 export const getCounterpartyName = (escrow: any, role: "buyer" | "seller") => {
-  if (role === "buyer") {
+  if (role === "seller") {
     return (
-      escrow?.recipient?.firstName || escrow?.recipient?.companyName || "Seller"
+      escrow?.recipient?.firstName || escrow?.recipient?.companyName || "Buyer"
     );
   }
 
-  return escrow?.creator?.firstName || escrow?.creator?.companyName || "Buyer";
+  return escrow?.creator?.firstName || escrow?.creator?.companyName || "Seller";
 };
 
 export const Row = ({ title, value }: { title: string; value: string }) => (
@@ -108,15 +106,56 @@ export const Timeline = ({
   </View>
 );
 
-export const StatusPill = ({ status }: { status: string }) => (
-  <View
-    className={`px-2 py-0.5 rounded-full ${
-      status === "FUNDED" ? "bg-success" : "bg-ink-muted"
-    }`}
-  >
-    <Text className="text-white text-[10px] font-semibold">{status}</Text>
-  </View>
-);
+export const StatusPill = ({ status }: { status: string }) => {
+  const normalizedStatus = status?.toUpperCase();
+
+  const getStatusStyles = () => {
+    switch (normalizedStatus) {
+      case "DELIVERED":
+      case "RELEASED":
+        return {
+          container: "bg-green-100",
+          text: "text-green-700",
+        };
+
+      case "FUNDED":
+        return {
+          container: "bg-yellow-100",
+          text: "text-yellow-700",
+        };
+
+      case "CANCELLED":
+      case "DISPUTED":
+        return {
+          container: "bg-red-100",
+          text: "text-red-700",
+        };
+
+      case "REFUNDED":
+        return {
+          container: "bg-orange-100",
+          text: "text-orange-700",
+        };
+
+      case "CREATED":
+      default:
+        return {
+          container: "bg-gray-100",
+          text: "text-gray-600",
+        };
+    }
+  };
+
+  const styles = getStatusStyles();
+
+  return (
+    <View className={`px-2 py-0.5 rounded-full ${styles.container}`}>
+      <Text className={`text-[10px] font-semibold ${styles.text}`}>
+        {normalizedStatus}
+      </Text>
+    </View>
+  );
+};
 
 export const RolePill = ({ role }: { role: "buyer" | "seller" }) => (
   <View

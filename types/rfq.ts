@@ -31,6 +31,10 @@ export interface QuoteUser {
 
 export interface Quote {
   id: number;
+  /** Seller: the user who created the RFQ. */
+  creatorId?: string | number;
+  /** Buyer: the user receiving the RFQ. */
+  recipientId?: string | number;
 
   quote_number: string;
   type: "RFQ" | "Invoice";
@@ -96,7 +100,7 @@ export interface Quote {
 }
 
 export interface CreateRFQPayload {
-  recipientId: string;
+  recipientId: string | number;
   product_description: string;
   product_quantity: number;
   amount: number;

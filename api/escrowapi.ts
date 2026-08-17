@@ -123,7 +123,7 @@ export const getMyEscrow = async () => {
 
   return escrows.map((item: any) => ({
     ...item,
-    role: String(item.creatorId) === String(userId) ? "buyer" : "seller",
+    role: String(item.creatorId) === String(userId) ? "seller" : "buyer",
   }));
 };
 

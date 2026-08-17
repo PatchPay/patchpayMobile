@@ -751,7 +751,7 @@ export default function RFQScreen() {
                       postal_code: text,
                     }))
                   }
-                  placeholder="Postal code"
+                  placeholder="Postal / ZIP Code (Optional)"
                   keyboardType="numeric"
                   style={{
                     flex: 1,
