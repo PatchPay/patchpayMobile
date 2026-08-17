@@ -14,6 +14,10 @@ export interface Escrow {
   amount: number;
   currency?: string;
   status: EscrowStatus;
+  /** Seller who delivers the product/service. */
+  creatorId?: string | number;
+  /** Buyer who confirms receipt. */
+  recipientId?: string | number;
   createdAt?: string;
   updatedAt?: string;
 }

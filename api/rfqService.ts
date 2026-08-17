@@ -25,6 +25,13 @@ export const rfqService = {
     return Array.isArray(data) ? data : [];
   },
 
+  /** RFQs addressed to the authenticated buyer. */
+  async getReceivedRFQs(): Promise<Quote[]> {
+    const res = await API.get("/rfq/quotes/received");
+    const data = unwrapData<Quote[]>(res.data);
+    return Array.isArray(data) ? data : [];
+  },
+
   async getQuote(quoteId: string): Promise<Quote> {
     const res = await API.get(`/rfq/quotes/${quoteId}`);
     console.log("this the response frome the quotes", res.data);

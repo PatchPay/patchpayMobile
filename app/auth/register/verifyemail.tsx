@@ -21,18 +21,23 @@ async function verifyOtp(
   otp: string,
   countryCode: string,
 ): Promise<void> {
-  console.log("📤 Sending OTP request:", { email, otp, countryCode });
+  console.log("📤 Sending OTP request:", {
+    email,
+    otp,
+    countryCode,
+  });
 
-  const res = await verifyEmail({ email, otp, countryCode });
+  const response = await verifyEmail({
+    email,
+    otp,
+    countryCode,
+  });
 
-  console.log("📥 Response status:", res.status);
+  console.log("📥 Verify Email Status:", response.status);
+  console.log("📥 Verify Email Response:", response.data);
 
-  const data = await res.json().catch(() => ({}));
-
-  console.log("📥 Response body:", data);
-
-  if (!res.ok) {
-    throw new Error(data?.message ?? "Verification failed.");
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(response.data?.message ?? "Verification failed.");
   }
 }
 
