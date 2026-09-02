@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import {
   AlertTriangle,
   ArrowLeft,
+  Camera,
   CheckCircle,
   FileText,
   Lock,
@@ -37,7 +38,6 @@ import {
 } from "@/api/escrowapi";
 
 import { useAuth } from "@/hooks/useAuth";
-import ConfirmModal from "@/model/confimmodal";
 
 import {
   formatDate,
@@ -60,9 +60,17 @@ const EscrowDetailsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Buyer confirmation
+  // Buyer confirmation (now requires a photo of the received item)
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmingReceipt, setConfirmingReceipt] = useState(false);
+
+  const [confirmationImage, setConfirmationImage] = useState<{
+    uri: string;
+    name: string;
+    type: string;
+  } | null>(null);
+
+  const [confirmError, setConfirmError] = useState<string | null>(null);
 
   // Buyer dispute
   const [showDisputeModal, setShowDisputeModal] = useState(false);
@@ -129,10 +137,69 @@ const EscrowDetailsScreen = () => {
 
   /**
    * BUYER (recipient):
-   * Confirm receipt.
+   * Take a photo of the item as received. This is the proof that gets
+   * uploaded alongside the confirm-receipt request.
+   *
+   * Backend: multer field name must match deliveryUploadMiddleware's
+   * uploadBuyerConfirmationProof config — verify against that file.
+   */
+  const handleTakeConfirmationPhoto = async () => {
+    setConfirmError(null);
+
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+
+    if (!permission.granted) {
+      setConfirmError(
+        "Camera permission is required to take a confirmation photo.",
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsEditing: false,
+    });
+
+    if (result.canceled || !result.assets?.[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+
+    try {
+      const normalized = normalizeDeliveryProofImage({
+        uri: asset.uri,
+        name: asset.fileName || undefined,
+        type: asset.mimeType || undefined,
+      });
+
+      setConfirmationImage(normalized);
+      setConfirmError(null);
+    } catch (error: any) {
+      setConfirmError(
+        error?.message || "Please retake the photo (JPG, PNG, or WEBP).",
+      );
+    }
+  };
+
+  /**
+   * Close confirm-receipt modal
+   */
+  const closeConfirmModal = () => {
+    if (confirmingReceipt) return;
+
+    setShowConfirmModal(false);
+    setConfirmationImage(null);
+    setConfirmError(null);
+  };
+
+  /**
+   * BUYER (recipient):
+   * Confirm receipt by submitting a photo of what was received.
    *
    * Backend:
-   * POST /escrow/:id/confirm-receipt
+   * POST /escrow/:id/confirm-receipt (multipart, field: confirmation proof)
    *
    * This automatically releases the escrow funds.
    */
@@ -140,24 +207,33 @@ const EscrowDetailsScreen = () => {
     if (!escrowId) return;
 
     if (!isRecipient) {
-      Alert.alert("Not Allowed", "Only the buyer can confirm receipt.");
+      setConfirmError("Only the buyer can confirm receipt.");
       return;
     }
 
     if (escrow?.status !== "DELIVERED") {
-      Alert.alert(
-        "Cannot Confirm",
+      setConfirmError(
         "Receipt can only be confirmed after the seller marks the escrow as delivered.",
       );
       return;
     }
 
+    if (!confirmationImage?.uri) {
+      setConfirmError("Please take a photo of the item you received first.");
+      return;
+    }
+
     setConfirmingReceipt(true);
+    setConfirmError(null);
 
     try {
-      const updatedEscrow = await confirmEscrowReceipt(escrowId);
+      const updatedEscrow = await confirmEscrowReceipt(
+        escrowId,
+        confirmationImage,
+      );
 
       setShowConfirmModal(false);
+      setConfirmationImage(null);
 
       // Immediately update UI with backend response
       if (updatedEscrow) {
@@ -182,30 +258,27 @@ const EscrowDetailsScreen = () => {
       const backendMessage = error?.response?.data?.message;
 
       if (status === 403) {
-        Alert.alert(
-          "Not Allowed",
-          "Only the buyer can confirm receipt for this escrow.",
-        );
+        setConfirmError("Only the buyer can confirm receipt for this escrow.");
       } else if (status === 400) {
-        Alert.alert(
-          "Cannot Confirm",
+        setConfirmError(
           backendMessage || "Receipt can only be confirmed after delivery.",
         );
       } else if (status === 404) {
-        Alert.alert(
-          "Escrow Not Found",
-          "This escrow could no longer be found.",
+        setConfirmError("This escrow could no longer be found.");
+      } else if (status === 409) {
+        setConfirmError(
+          backendMessage || "Receipt has already been confirmed.",
         );
+      } else if (status === 413) {
+        setConfirmError("Confirmation photo must be 5MB or smaller.");
+      } else if (status === 415) {
+        setConfirmError(backendMessage || "This image type is not supported.");
       } else if (!error?.response || error?.code === "ERR_NETWORK") {
-        Alert.alert(
-          "Connection Error",
+        setConfirmError(
           "Unable to connect to the server. Please check your internet connection and try again.",
         );
       } else {
-        Alert.alert(
-          "Confirmation Failed",
-          backendMessage || "Failed to confirm receipt.",
-        );
+        setConfirmError(backendMessage || "Failed to confirm receipt.");
       }
     } finally {
       setConfirmingReceipt(false);
@@ -724,8 +797,8 @@ const EscrowDetailsScreen = () => {
 
                     <Text className="text-gray-600 text-xs mt-1">
                       Review the delivery proof below. If everything checks out,
-                      confirm receipt. If something&#39;s wrong, you can dispute
-                      instead.
+                      take a photo of the item to confirm receipt. If
+                      something&#39;s wrong, you can dispute instead.
                     </Text>
                   </View>
                 </View>
@@ -788,7 +861,7 @@ const EscrowDetailsScreen = () => {
               </View>
 
               {/* ================================================= */}
-              {/* DELIVERY PROOF */}
+              {/* DELIVERY PROOF (seller's) */}
               {/* ================================================= */}
 
               {deliveryProofUrl && (
@@ -816,6 +889,38 @@ const EscrowDetailsScreen = () => {
               )}
 
               {/* ================================================= */}
+              {/* BUYER'S OWN CONFIRMATION PROOF (after release) */}
+              {/* ================================================= */}
+
+              {escrow.buyerConfirmationProofUrl && (
+                <View className="bg-white rounded-2xl p-5 mb-4">
+                  <View className="flex-row items-center mb-3">
+                    <Camera size={20} color="#4f46e5" />
+
+                    <Text className="font-semibold ml-2">
+                      Your Confirmation Photo
+                    </Text>
+                  </View>
+
+                  <Image
+                    source={{
+                      uri: getDeliveryProofUrl(
+                        escrow.buyerConfirmationProofUrl,
+                      ) ?? undefined,
+                    }}
+                    className="w-full h-56 rounded-xl"
+                    resizeMode="cover"
+                  />
+
+                  {escrow.buyerReceivedAt && (
+                    <Text className="text-gray-400 text-xs mt-2">
+                      Submitted on {formatDate(escrow.buyerReceivedAt)}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* ================================================= */}
               {/* BUYER ACTIONS */}
               {/* ================================================= */}
 
@@ -826,7 +931,7 @@ const EscrowDetailsScreen = () => {
                   className="bg-brand rounded-2xl py-4 items-center mb-3"
                 >
                   <View className="flex-row items-center">
-                    <PackageCheck size={19} color="white" />
+                    <Camera size={19} color="white" />
 
                     <Text className="text-white font-semibold ml-2">
                       Confirm Receipt
@@ -1015,6 +1120,39 @@ const EscrowDetailsScreen = () => {
               )}
 
               {/* ================================================= */}
+              {/* BUYER'S CONFIRMATION PROOF (visible to seller too) */}
+              {/* ================================================= */}
+
+              {escrow.buyerConfirmationProofUrl && (
+                <View className="bg-white rounded-2xl p-5 mb-4">
+                  <View className="flex-row items-center mb-3">
+                    <Camera size={20} color="#4f46e5" />
+
+                    <Text className="font-semibold ml-2">
+                      Buyer&#39;s Confirmation Photo
+                    </Text>
+                  </View>
+
+                  <Image
+                    source={{
+                      uri:
+                        getDeliveryProofUrl(
+                          escrow.buyerConfirmationProofUrl,
+                        ) || undefined,
+                    }}
+                    className="w-full h-56 rounded-xl"
+                    resizeMode="cover"
+                  />
+
+                  {escrow.buyerReceivedAt && (
+                    <Text className="text-gray-400 text-xs mt-2">
+                      Submitted on {formatDate(escrow.buyerReceivedAt)}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* ================================================= */}
               {/* SELLER ACTION */}
               {/* ================================================= */}
 
@@ -1083,26 +1221,102 @@ const EscrowDetailsScreen = () => {
       </ScrollView>
 
       {/* ===================================================== */}
-      {/* BUYER CONFIRM RECEIPT MODAL */}
+      {/* BUYER CONFIRM RECEIPT MODAL (camera capture) */}
       {/* ===================================================== */}
 
-      <ConfirmModal
+      <Modal
         visible={showConfirmModal}
-        title="Confirm Receipt"
-        message={`Please confirm that you have received your order. This will release ${formatMoney(
-          escrow.amount,
-          escrow.currency,
-        )} to the seller. This action cannot be undone.`}
-        icon="package"
-        danger={false}
-        confirmLabel={confirmingReceipt ? "Confirming…" : "Confirm Receipt"}
-        onCancel={() => {
-          if (!confirmingReceipt) {
-            setShowConfirmModal(false);
-          }
-        }}
-        onConfirm={handleConfirmReceipt}
-      />
+        transparent
+        animationType="fade"
+        onRequestClose={closeConfirmModal}
+      >
+        <View className="flex-1 bg-black/50 items-center justify-center px-6">
+          <View className="bg-white rounded-2xl p-5 w-full">
+            <Text className="text-lg font-semibold mb-1">Confirm Receipt</Text>
+
+            <Text className="text-gray-500 text-sm mb-4">
+              Take a photo of the item you received. This confirms receipt and
+              will release {formatMoney(escrow.amount, escrow.currency)} to the
+              seller. This action cannot be undone.
+            </Text>
+
+            {/* CAMERA CAPTURE */}
+            <TouchableOpacity
+              onPress={handleTakeConfirmationPhoto}
+              disabled={confirmingReceipt}
+              className="border border-dashed border-slate-300 rounded-xl h-40 items-center justify-center overflow-hidden"
+            >
+              {confirmationImage ? (
+                <Image
+                  source={{
+                    uri: confirmationImage.uri,
+                  }}
+                  className="w-full h-full"
+                  resizeMode="cover"
+                />
+              ) : (
+                <View className="items-center">
+                  <Camera size={30} color="#94a3b8" />
+
+                  <Text className="text-slate-400 text-sm mt-2">
+                    Tap to take a photo
+                  </Text>
+
+                  <Text className="text-slate-400 text-xs mt-1">
+                    JPG, PNG or WEBP • Max 5MB
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {confirmationImage && (
+              <TouchableOpacity
+                onPress={handleTakeConfirmationPhoto}
+                disabled={confirmingReceipt}
+                className="mt-2 self-start"
+              >
+                <Text className="text-brand text-xs font-medium">
+                  Retake photo
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* ERROR */}
+            {confirmError && (
+              <Text className="text-red-500 text-xs mt-2">{confirmError}</Text>
+            )}
+
+            {/* BUTTONS */}
+            <View className="flex-row mt-5 gap-3">
+              <TouchableOpacity
+                onPress={closeConfirmModal}
+                disabled={confirmingReceipt}
+                className="flex-1 py-3 rounded-xl items-center bg-slate-100"
+              >
+                <Text className="text-slate-700 font-semibold">Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleConfirmReceipt}
+                disabled={confirmingReceipt || !confirmationImage}
+                className={`flex-1 py-3 rounded-xl items-center ${
+                  confirmationImage && !confirmingReceipt
+                    ? "bg-brand"
+                    : "bg-slate-300"
+                }`}
+              >
+                <View className="flex-row items-center">
+                  <PackageCheck size={17} color="white" />
+
+                  <Text className="text-white font-semibold ml-2">
+                    {confirmingReceipt ? "Confirming…" : "Confirm Receipt"}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ===================================================== */}
       {/* BUYER DISPUTE MODAL */}

@@ -1,4 +1,5 @@
 import { invoiceService } from "@/api/invoiceService";
+import { useAuth } from "@/hooks/useAuth";
 import { Escrow } from "@/types/escrow";
 import { Invoice } from "@/types/invoice";
 import { Ionicons } from "@expo/vector-icons";
@@ -91,6 +92,8 @@ function SectionHeader({ title }: { title: string }) {
 
 export default function InvoiceScreen() {
   const { invoiceId } = useLocalSearchParams<{ invoiceId: string }>();
+
+  const { user } = useAuth();
   const [invoice, setInvoice] = useState<Invoice | null>(null); // using `any` to cover full response shape
   const [escrow, setEscrow] = useState<Escrow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,6 +106,28 @@ export default function InvoiceScreen() {
   const [webViewLoading, setWebViewLoading] = useState(true);
 
   const webViewRef = useRef<WebView>(null);
+
+  const currentUserId = String(user?.id ?? "");
+
+  const inv = invoice;
+  const rfq = (inv as any)?.rfq;
+
+  // FIX: `rfq.user_data` / `rfq.destinatary_user` are full USER OBJECTS
+  // (see usage below: rfq?.user_data?.firstName, rfq?.destinatary_user?.firstName).
+  // The old `??` chains put those objects FIRST, so `String(rfq.destinatary_user)`
+  // resolved to the literal string "[object Object]" instead of an actual id,
+  // meaning `buyerId` could never match `currentUserId` and the Pay button
+  // never rendered for the buyer. Id fields must be checked before the object.
+  const sellerId = String(
+    rfq?.user_id ?? rfq?.user ?? rfq?.user_data?.id ?? "",
+  );
+
+  const buyerId = String(
+    rfq?.destinatary_user_id ?? rfq?.destinatary_user?.id ?? "",
+  );
+
+  const isSeller = currentUserId === sellerId;
+  const isBuyer = currentUserId === buyerId;
 
   const loadInvoice = useCallback(async () => {
     if (!invoiceId) return;
@@ -222,9 +247,7 @@ export default function InvoiceScreen() {
     }
   };
 
-  const inv = invoice;
   // The RFQ payload is nested under `rfq` (not `rfqId` — that field is just the numeric id)
-  const rfq = (inv as any)?.rfq;
 
   console.log("invoice data:", inv);
 
@@ -536,34 +559,86 @@ export default function InvoiceScreen() {
             )}
 
             {/* ── pay button ── */}
+            {/* ── payment actions ── */}
             {(inv.paymentStatus ?? inv.status) === "unpaid" ||
             (inv.paymentStatus ?? inv.status) === "pending" ? (
-              <TouchableOpacity
-                onPress={handlePay}
-                disabled={paying}
-                activeOpacity={0.85}
-                style={styles.payBtn}
-              >
-                {paying ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <View style={styles.payBtnInner}>
-                    <Ionicons
-                      name="card-outline"
-                      size={20}
-                      color="#fff"
-                      style={{ marginRight: 8 }}
-                    />
-                    <Text style={styles.payBtnText}>
-                      Pay{" "}
-                      {fmt(
-                        rfq?.total ?? inv.amount,
-                        rfq?.currency ?? inv.currency,
-                      )}
-                    </Text>
-                  </View>
+              <>
+                {isBuyer && (
+                  <TouchableOpacity
+                    onPress={handlePay}
+                    disabled={paying}
+                    activeOpacity={0.85}
+                    style={styles.payBtn}
+                  >
+                    {paying ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <View style={styles.payBtnInner}>
+                        <Ionicons
+                          name="card-outline"
+                          size={20}
+                          color="#fff"
+                          style={{ marginRight: 8 }}
+                        />
+
+                        <Text style={styles.payBtnText}>
+                          Pay{" "}
+                          {fmt(
+                            rfq?.total ?? inv.amount,
+                            rfq?.currency ?? inv.currency,
+                          )}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
+
+                {isSeller && (
+                  <>
+                    <View style={styles.waitingPaymentCard}>
+                      <View style={styles.waitingPaymentIcon}>
+                        <Ionicons
+                          name="time-outline"
+                          size={22}
+                          color="#F59E0B"
+                        />
+                      </View>
+
+                      <View style={styles.waitingPaymentContent}>
+                        <Text style={styles.waitingPaymentTitle}>
+                          Waiting for Buyer Payment
+                        </Text>
+
+                        <Text style={styles.waitingPaymentText}>
+                          The buyer has not paid this invoice yet. Once payment
+                          is completed, the funds will be secured in escrow and
+                          you can proceed with the order.
+                        </Text>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (rfq?.id) {
+                          router.push(`/(components)/rfq/${rfq.id}`);
+                        } else {
+                          router.back();
+                        }
+                      }}
+                      activeOpacity={0.85}
+                      style={styles.backToRfqBtn}
+                    >
+                      <Ionicons
+                        name="arrow-back-outline"
+                        size={18}
+                        color="#0057b8"
+                      />
+
+                      <Text style={styles.backToRfqText}>Back to RFQ</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
             ) : null}
 
             {/* footer note */}
@@ -643,6 +718,61 @@ export default function InvoiceScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#f0f4fa" },
+
+  waitingPaymentCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+  },
+
+  waitingPaymentIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#FEF3C7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  waitingPaymentContent: {
+    flex: 1,
+  },
+
+  waitingPaymentTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#92400E",
+    marginBottom: 4,
+  },
+
+  waitingPaymentText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#A16207",
+  },
+
+  backToRfqBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#E6F0FF",
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "#CDE3FF",
+  },
+
+  backToRfqText: {
+    color: "#0057b8",
+    fontSize: 14,
+    fontWeight: "800",
+  },
 
   // top bar
   topBar: {

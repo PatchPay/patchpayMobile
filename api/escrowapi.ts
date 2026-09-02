@@ -227,8 +227,38 @@ export const markEscrowDelivered = async (
   }
 };
 
-export const confirmEscrowReceipt = async (id: string) => {
-  const { data } = await API.post(`/escrow/${id}/confirm-receipt`);
+export const confirmEscrowReceipt = async (
+  escrowId: string,
+  proofImage: DeliveryProofImage,
+) => {
+  const normalizedImage = normalizeDeliveryProofImage(proofImage);
 
-  return data.data;
+  const formData = new FormData();
+
+  formData.append("buyerConfirmationProof", {
+    uri: normalizedImage.uri,
+    name: normalizedImage.name,
+    type: normalizedImage.type,
+  } as any);
+
+  console.log("=== CONFIRM RECEIPT UPLOAD ===");
+  console.log("field:", "buyerConfirmationProof");
+  console.log("uri:", normalizedImage.uri);
+  console.log("name:", normalizedImage.name);
+  console.log("type:", normalizedImage.type);
+
+  const response = await API.post(
+    `/escrow/${escrowId}/confirm-receipt`,
+    formData,
+    {
+      timeout: 60000,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "multipart/form-data",
+      },
+      transformRequest: [(data) => data],
+    },
+  );
+
+  return response.data.data;
 };
