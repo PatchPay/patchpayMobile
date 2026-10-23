@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -11,8 +11,6 @@ import {
   View,
 } from "react-native";
 
-import { LinearGradient } from "expo-linear-gradient";
-
 import { Feather, Ionicons } from "@expo/vector-icons";
 
 import { router } from "expo-router";
@@ -22,6 +20,9 @@ import FieldCard from "./components/FieldCard";
 import QuoteCard from "./components/quotecard";
 import RecipientModal from "./components/RecipientModal";
 import SelectPill from "./components/SelectPill";
+
+import { City, Country, ICountry, IState, State } from "country-state-city";
+import PickerField, { PickerOption } from "./components/PickerField";
 
 import { DELIVERY_TYPES, TRADE_TYPES } from "@/constant/rfq";
 
@@ -46,6 +47,74 @@ export default function RFQScreen() {
   const [tab, setTab] = useState<"create" | "my">("create");
 
   const [recipient, setRecipient] = useState<FoundUser | null>(null);
+
+  const [selectedCountry, setSelectedCountry] = useState<ICountry | null>(null);
+  const [selectedState, setSelectedState] = useState<IState | null>(null);
+
+  const countryOptions: PickerOption[] = useMemo(
+    () =>
+      Country.getAllCountries().map((c) => ({
+        label: c.name,
+        value: c.isoCode,
+      })),
+    [],
+  );
+
+  const stateOptions: PickerOption[] = useMemo(
+    () =>
+      selectedCountry
+        ? State.getStatesOfCountry(selectedCountry.isoCode).map((s) => ({
+            label: s.name,
+            value: s.isoCode,
+          }))
+        : [],
+    [selectedCountry],
+  );
+
+  const lgaOptions: PickerOption[] = useMemo(
+    () =>
+      selectedCountry && selectedState
+        ? City.getCitiesOfState(
+            selectedCountry.isoCode,
+            selectedState.isoCode,
+          ).map((c) => ({
+            label: c.name,
+            value: c.name,
+          }))
+        : [],
+    [selectedCountry, selectedState],
+  );
+
+  const handleCountrySelect = (option: PickerOption) => {
+    const country =
+      Country.getAllCountries().find((c) => c.isoCode === option.value) ?? null;
+    setSelectedCountry(country);
+    setSelectedState(null);
+    setDeliveryAddress((prev) => ({
+      ...prev,
+      country: country?.name ?? "",
+      state: "",
+      city: "",
+    }));
+  };
+
+  const handleStateSelect = (option: PickerOption) => {
+    const state = selectedCountry
+      ? (State.getStatesOfCountry(selectedCountry.isoCode).find(
+          (s) => s.isoCode === option.value,
+        ) ?? null)
+      : null;
+    setSelectedState(state);
+    setDeliveryAddress((prev) => ({
+      ...prev,
+      state: state?.name ?? "",
+      city: "",
+    }));
+  };
+
+  const handleLgaSelect = (option: PickerOption) => {
+    setDeliveryAddress((prev) => ({ ...prev, city: option.value }));
+  };
 
   const [arrivalDate, setArrivalDate] = useState<Date | null>(null);
   const [arrivalTime, setArrivalTime] = useState<Date | null>(null);
@@ -173,6 +242,8 @@ export default function RFQScreen() {
         recipientId: recipient?.id,
         product_description: productDescription,
         product_quantity: totalQty,
+        // Always use Squad
+        paymentProvider: "squad",
         amount: numAmount,
         delivery_type: deliveryType,
         trade_type: tradeType,
@@ -289,12 +360,12 @@ export default function RFQScreen() {
       <StatusBar
         translucent
         backgroundColor="transparent"
-        barStyle="light-content"
+        barStyle="dark-content"
       />
 
-      <LinearGradient
-        colors={["#1a1060", "#1e2d8f", "#2541c4", "#6a3de8"]}
+      <View
         style={{
+          backgroundColor: "#dbeafe", // light blue
           paddingTop: Platform.OS === "ios" ? 58 : 46,
 
           paddingBottom: 28,
@@ -315,19 +386,19 @@ export default function RFQScreen() {
               width: 38,
               height: 38,
               borderRadius: 19,
-              backgroundColor: "rgba(255,255,255,0.15)",
+              backgroundColor: "#fff",
 
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Ionicons name="arrow-back" size={20} color="#fff" />
+            <Ionicons name="arrow-back" size={20} color="#1e2d8f" />
           </TouchableOpacity>
 
           <View style={{ marginLeft: 14 }}>
             <Text
               style={{
-                color: "#fff",
+                color: "#0f1923",
                 fontSize: 18,
                 fontWeight: "700",
               }}
@@ -337,7 +408,7 @@ export default function RFQScreen() {
 
             <Text
               style={{
-                color: "rgba(255,255,255,0.7)",
+                color: "#475569",
 
                 fontSize: 12,
               }}
@@ -350,7 +421,7 @@ export default function RFQScreen() {
         <View
           style={{
             flexDirection: "row",
-            backgroundColor: "rgba(255,255,255,0.12)",
+            backgroundColor: "rgba(37,65,196,0.10)",
 
             borderRadius: 14,
             padding: 4,
@@ -372,7 +443,7 @@ export default function RFQScreen() {
                 style={{
                   fontWeight: "700",
                   fontSize: 13,
-                  color: tab === t ? "#2541c4" : "rgba(255,255,255,0.7)",
+                  color: tab === t ? "#2541c4" : "#475569",
                 }}
               >
                 {t === "create" ? "Create RFQ" : "My RFQs"}
@@ -380,7 +451,7 @@ export default function RFQScreen() {
             </TouchableOpacity>
           ))}
         </View>
-      </LinearGradient>
+      </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -517,7 +588,7 @@ export default function RFQScreen() {
                   <TextInput
                     value={product.name}
                     onChangeText={(text) => updateProduct(index, "name", text)}
-                    placeholder="Product name (e.g. Beans, Laptop)"
+                    placeholder="Product name"
                     style={{
                       borderWidth: 1,
                       borderColor: "#e2e8f0",
@@ -668,103 +739,56 @@ export default function RFQScreen() {
               </View>
             </FieldCard>
 
-            <FieldCard
-              icon="map-pin"
-              iconColor="#f5a623"
-              iconBg="#fff8ec"
-              label="Delivery Address"
-            >
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+              <PickerField
+                label="Country"
+                placeholder="Select country"
+                value={deliveryAddress.country || null}
+                options={countryOptions}
+                onSelect={handleCountrySelect}
+                accentColor="#f5a623"
+              />
+              <PickerField
+                label="State"
+                placeholder="Select state"
+                value={deliveryAddress.state || null}
+                options={stateOptions}
+                disabled={!selectedCountry}
+                disabledHint="Pick a country first"
+                onSelect={handleStateSelect}
+                accentColor="#f5a623"
+              />
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+              <PickerField
+                label="Local Government Area"
+                placeholder="Select LGA"
+                value={deliveryAddress.city || null}
+                options={lgaOptions}
+                disabled={!selectedState}
+                disabledHint="Pick a state first"
+                onSelect={handleLgaSelect}
+                accentColor="#f5a623"
+              />
               <TextInput
-                value={deliveryAddress.street}
+                value={deliveryAddress.postal_code}
                 onChangeText={(text) =>
-                  setDeliveryAddress((prev) => ({ ...prev, street: text }))
+                  setDeliveryAddress((prev) => ({ ...prev, postal_code: text }))
                 }
-                placeholder="Street address"
+                placeholder="Postal / ZIP Code (Optional)"
+                keyboardType="numeric"
                 style={{
+                  flex: 1,
                   borderWidth: 1,
                   borderColor: "#e2e8f0",
                   borderRadius: 10,
                   padding: 12,
-                  marginBottom: 10,
                   fontSize: 14,
                   color: "#0f1923",
                 }}
               />
-
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-                <TextInput
-                  value={deliveryAddress.city}
-                  onChangeText={(text) =>
-                    setDeliveryAddress((prev) => ({ ...prev, city: text }))
-                  }
-                  placeholder="City"
-                  style={{
-                    flex: 1,
-                    borderWidth: 1,
-                    borderColor: "#e2e8f0",
-                    borderRadius: 10,
-                    padding: 12,
-                    fontSize: 14,
-                    color: "#0f1923",
-                  }}
-                />
-                <TextInput
-                  value={deliveryAddress.state}
-                  onChangeText={(text) =>
-                    setDeliveryAddress((prev) => ({ ...prev, state: text }))
-                  }
-                  placeholder="State"
-                  style={{
-                    flex: 1,
-                    borderWidth: 1,
-                    borderColor: "#e2e8f0",
-                    borderRadius: 10,
-                    padding: 12,
-                    fontSize: 14,
-                    color: "#0f1923",
-                  }}
-                />
-              </View>
-
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-                <TextInput
-                  value={deliveryAddress.country}
-                  onChangeText={(text) =>
-                    setDeliveryAddress((prev) => ({ ...prev, country: text }))
-                  }
-                  placeholder="Country"
-                  style={{
-                    flex: 1,
-                    borderWidth: 1,
-                    borderColor: "#e2e8f0",
-                    borderRadius: 10,
-                    padding: 12,
-                    fontSize: 14,
-                    color: "#0f1923",
-                  }}
-                />
-                <TextInput
-                  value={deliveryAddress.postal_code}
-                  onChangeText={(text) =>
-                    setDeliveryAddress((prev) => ({
-                      ...prev,
-                      postal_code: text,
-                    }))
-                  }
-                  placeholder="Postal / ZIP Code (Optional)"
-                  keyboardType="numeric"
-                  style={{
-                    flex: 1,
-                    borderWidth: 1,
-                    borderColor: "#e2e8f0",
-                    borderRadius: 10,
-                    padding: 12,
-                    fontSize: 14,
-                    color: "#0f1923",
-                  }}
-                />
-              </View>
-            </FieldCard>
+            </View>
 
             <FieldCard
               icon="calendar"
@@ -886,31 +910,32 @@ export default function RFQScreen() {
               />
             </FieldCard>
 
-            <TouchableOpacity onPress={handlePublish} disabled={submitting}>
-              <LinearGradient
-                colors={["#e05c97", "#c9417e"]}
-                style={{
-                  borderRadius: 16,
-                  paddingVertical: 16,
-                  alignItems: "center",
-                  marginTop: 12,
-                }}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text
-                    style={{
-                      color: "#fff",
-                      fontWeight: "800",
+            <TouchableOpacity
+              onPress={handlePublish}
+              disabled={submitting}
+              style={{
+                backgroundColor: "#e05c97",
+                borderRadius: 16,
+                paddingVertical: 16,
+                alignItems: "center",
+                marginTop: 12,
+                opacity: submitting ? 0.8 : 1,
+              }}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text
+                  style={{
+                    color: "#fff",
+                    fontWeight: "800",
 
-                      fontSize: 15,
-                    }}
-                  >
-                    Publish RFQ
-                  </Text>
-                )}
-              </LinearGradient>
+                    fontSize: 15,
+                  }}
+                >
+                  Publish RFQ
+                </Text>
+              )}
             </TouchableOpacity>
           </>
         ) : (

@@ -1,260 +1,445 @@
 import { getUser } from "@/api/authapi";
 import { getUserTransactions, getWallet } from "@/api/walletapi";
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { LinearGradient } from "expo-linear-gradient";
+import * as Clipboard from "expo-clipboard";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StatusBar,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+
 import NotificationBell from "../(components)/notification/notificationbell";
 
-// ── Currency config ───────────────────────────────────────────────────────────
+// ─── Theme ────────────────────────────────────────────────────────────────────
+
+const C = {
+  navy: "#161966",
+  navyLight: "#242A85",
+  blue: "#3F58F7",
+  blueSoft: "#EEF1FF",
+  blueMuted: "#C9D1FD",
+  background: "#F7F8FC",
+  surface: "#FFFFFF",
+  tile: "#F5F7FF",
+  ink: "#0F172A",
+  text: "#334155",
+  muted: "#64748B",
+  faint: "#94A3B8",
+  line: "#E8ECF4",
+  green: "#15803D",
+  greenSoft: "#DCFCE7",
+  amber: "#B45309",
+  amberSoft: "#FEF3C7",
+  red: "#DC2626",
+  redSoft: "#FEE2E2",
+  white: "#FFFFFF",
+  whiteSoft: "rgba(255,255,255,0.72)",
+  whiteChip: "rgba(255,255,255,0.12)",
+} as const;
+
+const RECENT_LIMIT = 3;
+
 type SupportedCurrency = "NGN" | "USD" | "EUR" | "GBP" | "TZS";
 
-const CURRENCY_CONFIG: Record<
-  SupportedCurrency,
-  { locale: string; flag: string }
-> = {
-  NGN: { locale: "en-NG", flag: "🇳🇬" },
-  USD: { locale: "en-US", flag: "🇺🇸" },
-  EUR: { locale: "de-DE", flag: "🇪🇺" },
-  GBP: { locale: "en-GB", flag: "🇬🇧" },
-  TZS: { locale: "en-TZ", flag: "🇹🇿" },
+const CURRENCY_LOCALE: Record<SupportedCurrency, string> = {
+  NGN: "en-NG",
+  USD: "en-US",
+  EUR: "de-DE",
+  GBP: "en-GB",
+  TZS: "en-TZ",
 };
 
-const formatBalance = (amount: number, currency: string): string => {
-  const cfg = CURRENCY_CONFIG[currency as SupportedCurrency];
-  const locale = cfg?.locale ?? "en-US";
+const NUM = { fontVariant: ["tabular-nums"] as const };
+
+// ─── Formatting ───────────────────────────────────────────────────────────────
+
+const formatMoney = (
+  amount: number,
+  currency: string,
+  decimals = 2,
+): string => {
+  const locale = CURRENCY_LOCALE[currency as SupportedCurrency] ?? "en-US";
+
   try {
     return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
     }).format(amount);
   } catch {
-    return `${currency} ${amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+    return `${currency} ${amount.toLocaleString("en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })}`;
   }
 };
 
-// ── Transaction helpers ───────────────────────────────────────────────────────
-const getTxMeta = (tx: any, walletId: string) => {
-  const type: string = tx.type?.toLowerCase() ?? "";
-  const isIncoming =
-    tx.recipientWallet === walletId || tx.recipientId !== undefined;
+const formatBalance = (amount: number, currency: string) =>
+  formatMoney(amount, currency, 2);
 
-  const map: Record<
-    string,
-    { icon: string; iconColor: string; iconBg: string }
-  > = {
-    deposit: {
-      icon: "arrow-down-left",
-      iconColor: "#16a34a",
-      iconBg: "#f0fdf4",
-    },
-    withdrawal: {
-      icon: "arrow-up-right",
-      iconColor: "#ef4444",
-      iconBg: "#fff1f1",
-    },
-    transfer: { icon: "send", iconColor: "#3a6df0", iconBg: "#eef2ff" },
-    escrow: { icon: "shield", iconColor: "#f5a623", iconBg: "#fff8ec" },
-    payment: { icon: "credit-card", iconColor: "#e05c97", iconBg: "#fdf2f8" },
-    refund: { icon: "rotate-ccw", iconColor: "#2ec4b6", iconBg: "#e8faf4" },
-  };
+const formatTxDate = (dateStr?: string): string => {
+  if (!dateStr) return "Date unavailable";
+
+  const date = new Date(dateStr);
+
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
 
   return (
-    map[type] ?? {
-      icon: isIncoming ? "arrow-down-left" : "arrow-up-right",
-      iconColor: isIncoming ? "#16a34a" : "#ef4444",
-      iconBg: isIncoming ? "#f0fdf4" : "#fff1f1",
-    }
+    date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }) +
+    " · " +
+    date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    })
   );
 };
 
-const getTxLabel = (tx: any): string => {
-  const type: string = tx.type?.toLowerCase() ?? "";
-  if (type === "deposit") return "Wallet Top-up";
-  if (type === "withdrawal") return "Withdrawal";
-  if (type === "transfer")
-    return tx.description?.includes("to") ? tx.description : "Transfer";
-  if (type === "escrow") return "Escrow Payment";
-  if (type === "payment") return "Payment";
-  if (type === "refund") return "Refund";
-  return tx.description ?? "Transaction";
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
 };
 
-const formatTxDate = (dateStr: string): string => {
-  try {
-    const d = new Date(dateStr);
-    return (
-      d.toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }) +
-      " · " +
-      d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-    );
-  } catch {
-    return dateStr;
+// ─── Transaction helpers ──────────────────────────────────────────────────────
+
+const getTxIcon = (tx: any, walletId: string): string => {
+  const type = tx.type?.toLowerCase() ?? "";
+
+  const icons: Record<string, string> = {
+    deposit: "arrow-down-left",
+    withdrawal: "arrow-up-right",
+    transfer: "send",
+    escrow: "shield",
+    payment: "credit-card",
+    refund: "rotate-ccw",
+  };
+
+  if (icons[type]) return icons[type];
+
+  return tx.recipientWallet === walletId || tx.recipientId !== undefined
+    ? "arrow-down-left"
+    : "arrow-up-right";
+};
+
+const getTxLabel = (tx: any): string => {
+  const type = tx.type?.toLowerCase() ?? "";
+
+  const labels: Record<string, string> = {
+    deposit: "Wallet Top-up",
+    withdrawal: "Withdrawal",
+    transfer: "Transfer",
+    escrow: "Escrow Payment",
+    payment: "Payment",
+    refund: "Refund",
+  };
+
+  if (type === "transfer" && tx.description) {
+    return tx.description;
   }
+
+  return labels[type] ?? tx.description ?? "Transaction";
 };
 
 const isIncomingTx = (tx: any, walletId: string): boolean => {
   const type = tx.type?.toLowerCase() ?? "";
+
   if (type === "deposit" || type === "refund") return true;
   if (type === "withdrawal") return false;
-  return tx.recipientWallet === walletId;
+
+  return Boolean(
+    walletId &&
+    (tx.recipientWallet === walletId || tx.recipientWallet?.id === walletId),
+  );
 };
 
-const STATUS_CONFIG: Record<
+const isCounted = (tx: any): boolean => {
+  const status = tx.status?.toLowerCase() ?? "completed";
+
+  return status !== "failed" && status !== "cancelled";
+};
+
+const STATUS_TEXT: Record<
   string,
-  { label: string; textColor: string; bgColor: string; dot: string }
+  { label: string; color: string; background: string }
 > = {
-  completed: {
-    label: "Completed",
-    textColor: "#16a34a",
-    bgColor: "#f0fdf4",
-    dot: "#16a34a",
-  },
   pending: {
     label: "Pending",
-    textColor: "#f5a623",
-    bgColor: "#fff8ec",
-    dot: "#f5a623",
+    color: C.amber,
+    background: C.amberSoft,
   },
   processing: {
     label: "Processing",
-    textColor: "#3a6df0",
-    bgColor: "#eef2ff",
-    dot: "#3a6df0",
+    color: C.blue,
+    background: C.blueSoft,
   },
   failed: {
     label: "Failed",
-    textColor: "#ef4444",
-    bgColor: "#fff1f1",
-    dot: "#ef4444",
+    color: C.red,
+    background: C.redSoft,
   },
   cancelled: {
     label: "Cancelled",
-    textColor: "#94a3b8",
-    bgColor: "#f8fafc",
-    dot: "#cbd5e1",
+    color: C.muted,
+    background: C.line,
   },
 };
 
-// ── Quick Actions ─────────────────────────────────────────────────────────────
+const sumRange = (
+  transactions: any[],
+  walletId: string,
+  from: Date,
+  to: Date,
+  incoming: boolean,
+): number => {
+  return transactions.reduce((sum, tx) => {
+    if (!isCounted(tx)) return sum;
+
+    const date = new Date(tx.created_at);
+
+    if (Number.isNaN(date.getTime()) || date < from || date >= to) {
+      return sum;
+    }
+
+    return isIncomingTx(tx, walletId) === incoming
+      ? sum + Math.abs(Number(tx.amount) || 0)
+      : sum;
+  }, 0);
+};
+
+const changeText = (current: number, previous: number) => {
+  if (previous <= 0) return null;
+
+  const percentage = Math.round(((current - previous) / previous) * 100);
+
+  return `${percentage >= 0 ? "+" : "−"}${Math.abs(percentage)}% vs last month`;
+};
+
+// ─── Quick actions ────────────────────────────────────────────────────────────
+
 const ACTIONS = [
   {
     icon: "credit-card",
     label: "Pay",
-    bg: ["#2ec4b6", "#1aaa9e"] as [string, string],
     path: "/(components)/sendmoney",
-    iconBg: "#e8faf8",
-    iconColor: "#2ec4b6",
   },
   {
     icon: "arrow-up-circle",
-    label: "Top Up",
-    bg: ["#3a6df0", "#2558e8"] as [string, string],
+    label: "Top up",
     path: "/(components)/topupscreen",
-    iconBg: "#eef2ff",
-    iconColor: "#3a6df0",
   },
   {
     icon: "shield",
-    label: "Escrow",
-    bg: ["#f5a623", "#e8960f"] as [string, string],
+    label: "Transactions",
     path: "/(components)/escrow/mainescrow",
-    iconBg: "#fff8ec",
-    iconColor: "#f5a623",
   },
   {
     icon: "file-text",
     label: "RFQ",
-    bg: ["#e05c97", "#c9417e"] as [string, string],
     path: "/(components)/rfq",
-    iconBg: "#fdf2f8",
-    iconColor: "#e05c97",
   },
   {
     icon: "arrow-down-circle",
     label: "Withdraw",
-    bg: ["#ef4444", "#dc2626"] as [string, string],
     path: "/(components)/withdraw",
-    iconBg: "#fff1f1",
-    iconColor: "#ef4444",
   },
 ] as const;
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ─── Reusable components ──────────────────────────────────────────────────────
+
+function SectionTitle({
+  title,
+  action,
+  onAction,
+}: {
+  title: string;
+  action?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <View style={styles.sectionHeading}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+
+      {action && onAction ? (
+        <TouchableOpacity onPress={onAction} activeOpacity={0.7} hitSlop={8}>
+          <Text style={styles.linkText}>{action}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  note,
+  icon,
+  iconColor,
+  iconBackground,
+}: {
+  label: string;
+  value: string;
+  note?: string | null;
+  icon: string;
+  iconColor: string;
+  iconBackground: string;
+}) {
+  return (
+    <View style={styles.statCard}>
+      <View style={styles.statTop}>
+        <View style={[styles.statIcon, { backgroundColor: iconBackground }]}>
+          <Feather name={icon as any} size={17} color={iconColor} />
+        </View>
+        <Text style={styles.statLabel}>{label}</Text>
+      </View>
+
+      <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+
+      <Text style={styles.statNote} numberOfLines={1}>
+        {note || " "}
+      </Text>
+    </View>
+  );
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function HomeScreen() {
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [wallet, setWallet] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
 
-  const fetchData = async () => {
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setFetchError(false);
+
     try {
-      const [u, w] = await Promise.all([getUser(), getWallet()]);
-      const tx = await getUserTransactions(u.id);
-      setUser(u);
-      setWallet(w?.data ?? w);
-      const txList = tx?.data ?? tx ?? [];
-      setTransactions(Array.isArray(txList) ? txList : []);
-    } catch (e) {
-      console.log("Fetch error:", e);
-    }
-  };
+      const [userResponse, walletResponse] = await Promise.all([
+        getUser(),
+        getWallet(),
+      ]);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        await fetchData();
-      } finally {
-        setLoading(false);
+      const currentWallet = walletResponse?.data ?? walletResponse;
+
+      const userId =
+        userResponse?.id ??
+        userResponse?._id ??
+        userResponse?.data?.id ??
+        userResponse?.data?._id;
+
+      let transactionList: any[] = [];
+
+      if (userId) {
+        const transactionResponse = await getUserTransactions(userId);
+
+        const result = transactionResponse?.data ?? transactionResponse;
+
+        transactionList = Array.isArray(result)
+          ? result
+          : Array.isArray(result?.transactions)
+            ? result.transactions
+            : Array.isArray(result?.data)
+              ? result.data
+              : [];
       }
-    })();
+
+      setUser(userResponse);
+      setWallet(currentWallet);
+      setTransactions(transactionList);
+    } catch (error) {
+      console.error("Dashboard fetch error:", error);
+      setFetchError(true);
+    }
   }, []);
 
   useEffect(() => {
-    if (!loading && user && !user.hasTransactionPin) {
-      setTimeout(() => setPinModalVisible(true), 800);
-    }
+    let mounted = true;
+
+    const initialize = async () => {
+      await fetchData();
+
+      if (mounted) setLoading(false);
+    };
+
+    initialize();
+
+    return () => {
+      mounted = false;
+
+      if (copyTimer.current) {
+        clearTimeout(copyTimer.current);
+      }
+
+      if (pinTimer.current) {
+        clearTimeout(pinTimer.current);
+      }
+    };
+  }, [fetchData]);
+
+  useEffect(() => {
+    if (loading || !user || user.hasTransactionPin) return;
+
+    pinTimer.current = setTimeout(() => {
+      setPinModalVisible(true);
+    }, 800);
+
+    return () => {
+      if (pinTimer.current) {
+        clearTimeout(pinTimer.current);
+      }
+    };
   }, [loading, user]);
 
-  const balance: number = wallet?.balance ?? 0;
-  const currency: string = wallet?.currency ?? "NGN";
-  const walletId: string = wallet?.id ?? wallet?.id ?? "";
-  const accountNumber: string = wallet?.accountNumber ?? "—";
-  const isActive: boolean = wallet?.isActive ?? false;
-  const firstName: string = user?.firstName ?? "User";
-  const surname: string = user?.surname ?? "";
-
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
+
     try {
       await fetchData();
-    } catch (e) {
-      console.log(e);
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [fetchData]);
+
+  const balance = Number(wallet?.balance) || 0;
+  const currency: string = wallet?.currency ?? "NGN";
+  const walletId: string = wallet?.id ?? wallet?._id ?? wallet?.walletId ?? "";
+
+  const accountNumber: string =
+    wallet?.accountNumber ?? wallet?.account_number ?? "—";
+
+  const isActive: boolean = wallet?.isActive ?? wallet?.is_active ?? false;
+
+  const firstName: string = user?.firstName ?? user?.first_name ?? "User";
+
+  const surname: string =
+    user?.surname ?? user?.lastName ?? user?.last_name ?? "";
 
   const formattedBalance = loading
     ? "—"
@@ -262,355 +447,256 @@ export default function HomeScreen() {
       ? formatBalance(balance, currency)
       : "••••••••";
 
-  // ── Greeting ──────────────────────────────────────────────────────────────
-  const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = getGreeting();
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const today = now.getDate();
+
+  const monthStart = new Date(year, month, 1);
+  const nextMonthStart = new Date(year, month + 1, 1);
+  const previousMonthStart = new Date(year, month - 1, 1);
+
+  const moneyIn = sumRange(
+    transactions,
+    walletId,
+    monthStart,
+    nextMonthStart,
+    true,
+  );
+
+  const moneyOut = sumRange(
+    transactions,
+    walletId,
+    monthStart,
+    nextMonthStart,
+    false,
+  );
+
+  const previousMoneyIn = sumRange(
+    transactions,
+    walletId,
+    previousMonthStart,
+    monthStart,
+    true,
+  );
+
+  const previousMoneyOut = sumRange(
+    transactions,
+    walletId,
+    previousMonthStart,
+    monthStart,
+    false,
+  );
+
+  const week = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(year, month, today - (6 - index));
+
+    const nextDate = new Date(year, month, today - (6 - index) + 1);
+
+    return {
+      label: date.toLocaleDateString("en-US", {
+        weekday: "short",
+      }),
+      out: sumRange(transactions, walletId, date, nextDate, false),
+      isToday: index === 6,
+    };
+  });
+
+  const weekMax = Math.max(...week.map((day) => day.out), 1);
+  const weekTotal = week.reduce((sum, day) => sum + day.out, 0);
+
+  const pendingCount = transactions.filter((tx) => {
+    const status = tx.status?.toLowerCase();
+
+    return status === "pending" || status === "processing";
+  }).length;
+
+  const showWidgets = !loading && transactions.length > 0;
+
+  const copyAccountNumber = async () => {
+    if (accountNumber === "—") return;
+
+    try {
+      await Clipboard.setStringAsync(accountNumber);
+      setCopied(true);
+
+      if (copyTimer.current) {
+        clearTimeout(copyTimer.current);
+      }
+
+      copyTimer.current = setTimeout(() => {
+        setCopied(false);
+      }, 1800);
+    } catch {
+      Alert.alert(
+        "Unable to copy",
+        "Please try copying your account number again.",
+      );
+    }
+  };
+
+  const openPayments = () => {
+    router.push("/(tabs)/payments");
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
-      <StatusBar
-        barStyle="light-content"
-        backgroundColor="transparent"
-        translucent
-      />
+    <View style={styles.screen}>
+      <StatusBar barStyle="light-content" backgroundColor={C.navy} />
 
       <ScrollView
-        style={{ flex: 1 }}
+        style={styles.scroll}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 110 }}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={C.blue}
+            colors={[C.blue]}
+          />
         }
       >
-        {/* ── Hero gradient ──────────────────────────────────────────────── */}
-        <LinearGradient
-          colors={["#0B1F3A", "#102E55", "#1D4ED8", "#3B82F6"]}
-          locations={[0, 0.35, 0.72, 1]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            paddingTop: Platform.OS === "ios" ? 58 : 46,
-            paddingBottom: 110,
-            paddingHorizontal: 22,
-            position: "relative",
-            overflow: "hidden",
-          }}
-        >
-          {/* Decorative orbs */}
-          <View
-            style={{
-              position: "absolute",
-              top: -20,
-              right: -40,
-              width: 200,
-              height: 200,
-              borderRadius: 100,
-              backgroundColor: "rgba(106,61,232,0.35)",
-            }}
-          />
-          <View
-            style={{
-              position: "absolute",
-              bottom: 20,
-              left: -50,
-              width: 170,
-              height: 170,
-              borderRadius: 85,
-              backgroundColor: "rgba(37,65,196,0.3)",
-            }}
-          />
-          <View
-            style={{
-              position: "absolute",
-              top: 80,
-              right: 30,
-              width: 60,
-              height: 60,
-              borderRadius: 30,
-              borderWidth: 1.5,
-              borderColor: "rgba(176,79,201,0.5)",
-              backgroundColor: "transparent",
-            }}
-          />
+        {/* ── Wallet header ──────────────────────────────────────── */}
 
-          {/* Top bar */}
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 24,
-            }}
-          >
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
-            >
-              {/* Avatar placeholder */}
-              <View
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 19,
-                  backgroundColor: "rgba(255,255,255,0.15)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderWidth: 1.5,
-                  borderColor: "rgba(255,255,255,0.25)",
-                }}
-              >
-                <Text
-                  style={{ color: "#fff", fontWeight: "700", fontSize: 14 }}
-                >
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <View style={styles.profileGroup}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
                   {firstName.charAt(0).toUpperCase()}
                 </Text>
               </View>
-              <View>
-                <Text
-                  style={{
-                    color: "rgba(255,255,255,0.55)",
-                    fontSize: 11,
-                    fontWeight: "500",
-                  }}
-                >
-                  {loading ? "Hello..." : greeting}
+
+              <View style={styles.greetingGroup}>
+                <Text style={styles.greeting}>
+                  {loading ? "Welcome" : greeting}
                 </Text>
-                <Text
-                  style={{ color: "#fff", fontSize: 14, fontWeight: "700" }}
-                >
-                  {loading ? "..." : `${firstName} ${surname}`.trim()}
+                <Text style={styles.userName} numberOfLines={1}>
+                  {loading ? "Loading..." : `${firstName} ${surname}`.trim()}
                 </Text>
               </View>
             </View>
 
-            <TouchableOpacity
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 19,
-                backgroundColor: "rgba(255,255,255,0.1)",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
+            <View style={styles.notificationButton}>
               <NotificationBell />
-            </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Balance card */}
-          <BlurView
-            intensity={25}
-            tint="light"
-            style={{
-              borderRadius: 24,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.2)",
-              backgroundColor: "rgba(255,255,255,0.1)",
-              overflow: "hidden",
-              padding: 22,
-            }}
-          >
-            {/* Currency flag + label */}
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 8,
-              }}
-            >
-              <Text style={{ fontSize: 14 }}>
-                {CURRENCY_CONFIG[currency as SupportedCurrency]?.flag ?? "🌐"}
-              </Text>
-              <Text
-                style={{
-                  color: "rgba(255,255,255,0.5)",
-                  fontSize: 10,
-                  letterSpacing: 2.5,
-                  textTransform: "uppercase",
-                  fontWeight: "600",
-                }}
-              >
-                Total Balance · {currency}
-              </Text>
+          <View style={styles.balanceHeading}>
+            <View>
+              <Text style={styles.balanceLabel}>Total wallet balance</Text>
+              <Text style={styles.currencyLabel}>{currency}</Text>
             </View>
 
-            {/* Amount row */}
             <Pressable
-              onPress={() => setBalanceVisible((v) => !v)}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 10,
-                marginBottom: 20,
-              }}
+              onPress={() => setBalanceVisible((visible) => !visible)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                balanceVisible ? "Hide wallet balance" : "Show wallet balance"
+              }
+              hitSlop={10}
+              style={styles.eyeButton}
             >
-              <Text
-                style={{
-                  color: "#fff",
-                  fontSize: 34,
-                  fontWeight: "800",
-                  letterSpacing: -1,
-                }}
-                adjustsFontSizeToFit
-                numberOfLines={1}
-              >
-                {formattedBalance}
-              </Text>
               <Ionicons
                 name={balanceVisible ? "eye-outline" : "eye-off-outline"}
-                size={18}
-                color="rgba(255,255,255,0.4)"
+                size={20}
+                color={C.white}
               />
             </Pressable>
+          </View>
 
-            <View
-              style={{
-                height: 1,
-                backgroundColor: "rgba(255,255,255,0.12)",
-                marginBottom: 16,
-              }}
-            />
+          <Text
+            style={styles.balanceValue}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {formattedBalance}
+          </Text>
 
-            {/* Bottom row */}
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <View>
-                <Text
-                  style={{
-                    color: "rgba(255,255,255,0.45)",
-                    fontSize: 9,
-                    letterSpacing: 2,
-                    textTransform: "uppercase",
-                    marginBottom: 3,
-                    fontWeight: "600",
-                  }}
-                >
-                  Available
+          <View style={styles.headerDivider} />
+
+          <View style={styles.accountRow}>
+            <View style={styles.accountInfo}>
+              <Text style={styles.accountLabel}>Account number</Text>
+
+              <View style={styles.accountNumberRow}>
+                <Text style={styles.accountNumber}>
+                  {loading ? "Loading..." : accountNumber}
                 </Text>
-                <Text
-                  style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}
-                >
-                  {formattedBalance}
-                </Text>
-              </View>
-              <View style={{ alignItems: "flex-end", gap: 6 }}>
+
                 {!loading && accountNumber !== "—" && (
-                  <View
-                    style={{
-                      backgroundColor: "rgba(255,255,255,0.1)",
-                      paddingHorizontal: 10,
-                      paddingVertical: 4,
-                      borderRadius: 8,
-                    }}
+                  <Pressable
+                    onPress={copyAccountNumber}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Copy account number"
+                    style={styles.copyButton}
                   >
-                    <Text
-                      style={{
-                        color: "rgba(255,255,255,0.7)",
-                        fontSize: 11,
-                        fontFamily:
-                          Platform.OS === "ios" ? "Courier" : "monospace",
-                      }}
-                    >
-                      #{accountNumber}
+                    <Feather
+                      name={copied ? "check" : "copy"}
+                      size={15}
+                      color={copied ? "#86EFAC" : C.white}
+                    />
+                    <Text style={styles.copyText}>
+                      {copied ? "Copied" : "Copy"}
                     </Text>
-                  </View>
+                  </Pressable>
                 )}
-                <View
-                  style={{ flexDirection: "row", alignItems: "center", gap: 5 }}
-                >
-                  <View
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: isActive ? "#4ade80" : "#f87171",
-                    }}
-                  />
-                  <Text
-                    style={{
-                      color: "rgba(255,255,255,0.55)",
-                      fontSize: 11,
-                      fontWeight: "500",
-                    }}
-                  >
-                    {isActive ? "Active" : "Inactive"}
-                  </Text>
-                </View>
               </View>
             </View>
-          </BlurView>
-        </LinearGradient>
 
-        {/* ── Quick Actions ──────────────────────────────────────────────── */}
-        <View
-          style={{
-            marginTop: -52,
-            marginHorizontal: 18,
-            backgroundColor: "#fff",
-            borderRadius: 22,
-            paddingTop: 18,
-            paddingBottom: 20,
-            paddingHorizontal: 18,
-            shadowColor: "#0B1F3A",
-            shadowOpacity: 0.12,
-            shadowRadius: 20,
-            shadowOffset: { width: 0, height: 6 },
-            elevation: 12,
-            zIndex: 10,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 10,
-              fontWeight: "700",
-              letterSpacing: 1.8,
-              textTransform: "uppercase",
-              color: "#94a3b8",
-              marginBottom: 16,
-            }}
-          >
-            Quick actions
-          </Text>
-          <View
-            style={{ flexDirection: "row", justifyContent: "space-between" }}
-          >
+            <View
+              style={[
+                styles.accountStatus,
+                {
+                  backgroundColor: isActive
+                    ? "rgba(34,197,94,0.15)"
+                    : "rgba(248,113,113,0.15)",
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor: isActive ? "#4ADE80" : "#F87171",
+                  },
+                ]}
+              />
+              <Text
+                style={[
+                  styles.accountStatusText,
+                  {
+                    color: isActive ? "#BBF7D0" : "#FECACA",
+                  },
+                ]}
+              >
+                {isActive ? "Active" : "Inactive"}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Quick actions ─────────────────────────────────────── */}
+
+        <View style={styles.quickActionsSection}>
+          <SectionTitle title="Quick actions" />
+
+          <View style={styles.actionsRow}>
             {ACTIONS.map((action) => (
               <TouchableOpacity
                 key={action.label}
                 onPress={() => router.push(action.path)}
-                activeOpacity={0.7}
-                style={{ alignItems: "center", gap: 8 }}
+                activeOpacity={0.72}
+                style={styles.actionItem}
               >
-                <View
-                  style={{
-                    width: 50,
-                    height: 50,
-                    borderRadius: 16,
-                    backgroundColor: action.iconBg,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Feather
-                    name={action.icon as any}
-                    size={20}
-                    color={action.iconColor}
-                  />
+                <View style={styles.actionIcon}>
+                  <Feather name={action.icon as any} size={21} color={C.blue} />
                 </View>
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "600",
-                    color: "#374151",
-                    textAlign: "center",
-                  }}
-                >
+
+                <Text style={styles.actionLabel} numberOfLines={2}>
                   {action.label}
                 </Text>
               </TouchableOpacity>
@@ -618,341 +704,359 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ── Latest Transactions ────────────────────────────────────────── */}
-        <View style={{ paddingHorizontal: 18, marginTop: 26 }}>
-          {/* Section header */}
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 14,
-            }}
-          >
-            <Text
-              style={{
-                color: "#0f1923",
-                fontWeight: "800",
-                fontSize: 18,
-                letterSpacing: -0.3,
-              }}
-            >
-              Recent
-            </Text>
-            <TouchableOpacity
-              onPress={() => router.push("/(tabs)/payments")}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 4,
-                backgroundColor: "#F8FAFC",
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 20,
-              }}
-            >
-              <Text
-                style={{ color: "#1D4ED8", fontSize: 12, fontWeight: "700" }}
-              >
-                See all
+        {/* ── Loading error ─────────────────────────────────────── */}
+
+        {fetchError && !loading && (
+          <View style={styles.errorCard}>
+            <View style={styles.errorIcon}>
+              <Feather name="alert-circle" size={20} color={C.red} />
+            </View>
+
+            <View style={styles.errorContent}>
+              <Text style={styles.errorTitle}>
+                Couldn&lsquo;t refresh everything
               </Text>
-              <Feather name="arrow-right" size={12} color="#1D4ED8" />
+              <Text style={styles.errorDescription}>
+                Check your connection and try again.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={onRefresh}
+              disabled={refreshing}
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryText}>Retry</Text>
             </TouchableOpacity>
           </View>
+        )}
 
-          {/* Loading */}
-          {loading && (
-            <View style={{ alignItems: "center", paddingVertical: 28 }}>
-              <ActivityIndicator size="small" color="#1D4ED8" />
-              <Text style={{ color: "#94a3b8", fontSize: 13, marginTop: 8 }}>
-                Loading...
+        {/* ── Overview ──────────────────────────────────────────── */}
+
+        <View style={styles.section}>
+          <SectionTitle title="Overview" />
+
+          {loading ? (
+            <View style={styles.loadingCard}>
+              <ActivityIndicator size="small" color={C.blue} />
+              <Text style={styles.loadingText}>Loading your overview...</Text>
+            </View>
+          ) : transactions.length === 0 ? (
+            <View style={styles.emptyOverview}>
+              <View style={styles.emptyOverviewIcon}>
+                <Feather name="bar-chart-2" size={23} color={C.blue} />
+              </View>
+              <Text style={styles.emptyOverviewTitle}>
+                Your overview starts here
+              </Text>
+              <Text style={styles.emptyOverviewDescription}>
+                Your money-in and spending insights will appear after your first
+                transaction.
               </Text>
             </View>
-          )}
+          ) : (
+            <>
+              <View style={styles.statsRow}>
+                <StatCard
+                  label="Money in"
+                  value={formatMoney(moneyIn, currency, 0)}
+                  note={changeText(moneyIn, previousMoneyIn)}
+                  icon="trending-up"
+                  iconColor={C.green}
+                  iconBackground={C.greenSoft}
+                />
 
-          {/* Empty */}
-          {!loading && transactions.length === 0 && (
-            <View
-              style={{
-                alignItems: "center",
-                paddingVertical: 36,
-                gap: 10,
-                backgroundColor: "#fff",
-                borderRadius: 20,
-                paddingHorizontal: 20,
-              }}
-            >
-              <View
-                style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 26,
-                  backgroundColor: "#eef2ff",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Feather name="inbox" size={22} color="#3a6df0" />
+                <StatCard
+                  label="Money out"
+                  value={formatMoney(moneyOut, currency, 0)}
+                  note={changeText(moneyOut, previousMoneyOut)}
+                  icon="trending-down"
+                  iconColor={C.red}
+                  iconBackground={C.redSoft}
+                />
               </View>
-              <Text
-                style={{ color: "#374151", fontSize: 14, fontWeight: "700" }}
-              >
+
+              {/* Weekly spending chart */}
+
+              <View style={styles.chartCard}>
+                <View style={styles.chartHeader}>
+                  <View>
+                    <Text style={styles.chartTitle}>Weekly spending</Text>
+                    <Text style={styles.chartSubtitle}>Your last 7 days</Text>
+                  </View>
+
+                  <View style={styles.chartTotalContainer}>
+                    <Text style={styles.chartTotalLabel}>Total spent</Text>
+                    <Text
+                      style={styles.chartTotal}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      {formatMoney(weekTotal, currency, 0)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.chart}>
+                  {week.map((day, index) => {
+                    const barHeight =
+                      day.out > 0 ? Math.max(6, (day.out / weekMax) * 74) : 4;
+
+                    return (
+                      <View
+                        key={`${day.label}-${index}`}
+                        style={styles.chartColumn}
+                      >
+                        <View style={styles.barTrack}>
+                          <View
+                            style={[
+                              styles.chartBar,
+                              {
+                                height: barHeight,
+                                backgroundColor: day.isToday
+                                  ? C.blue
+                                  : C.blueMuted,
+                              },
+                            ]}
+                          />
+                        </View>
+
+                        <Text
+                          style={[
+                            styles.chartDay,
+                            day.isToday && styles.chartDayToday,
+                          ]}
+                        >
+                          {day.label}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Pending transactions */}
+
+              {pendingCount > 0 && (
+                <TouchableOpacity
+                  onPress={openPayments}
+                  activeOpacity={0.75}
+                  style={styles.pendingCard}
+                >
+                  <View style={styles.pendingIcon}>
+                    <Feather name="clock" size={19} color={C.amber} />
+                  </View>
+
+                  <View style={styles.pendingContent}>
+                    <Text style={styles.pendingTitle}>
+                      Transactions in progress
+                    </Text>
+                    <Text style={styles.pendingDescription}>
+                      {pendingCount} transaction
+                      {pendingCount !== 1 ? "s" : ""} awaiting completion
+                    </Text>
+                  </View>
+
+                  <Feather name="chevron-right" size={20} color={C.faint} />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </View>
+
+        {/* ── Recent transactions ───────────────────────────────── */}
+
+        <View style={styles.section}>
+          <SectionTitle
+            title="Recent transactions"
+            action="See all"
+            onAction={openPayments}
+          />
+
+          {loading ? (
+            <View style={styles.transactionsLoading}>
+              <ActivityIndicator size="small" color={C.blue} />
+            </View>
+          ) : transactions.length === 0 ? (
+            <View style={styles.emptyTransactions}>
+              <View style={styles.emptyTransactionIcon}>
+                <Feather name="inbox" size={24} color={C.faint} />
+              </View>
+
+              <Text style={styles.emptyTransactionTitle}>
                 No transactions yet
               </Text>
-              <Text
-                style={{ color: "#94a3b8", fontSize: 12, textAlign: "center" }}
-              >
-                Your history will appear here once you make a transaction
+
+              <Text style={styles.emptyTransactionDescription}>
+                Your transaction history will appear here when you start using
+                your wallet.
               </Text>
+
+              <TouchableOpacity
+                onPress={() => router.push("/(components)/topupscreen")}
+                activeOpacity={0.75}
+                style={styles.emptyActionButton}
+              >
+                <Feather name="plus" size={16} color={C.white} />
+                <Text style={styles.emptyActionText}>Top up wallet</Text>
+              </TouchableOpacity>
             </View>
-          )}
-
-          {/* Show only 2 transactions */}
-          {!loading && transactions.length > 0 && (
-            <View style={{ gap: 10 }}>
-              {transactions.slice(0, 2).map((tx) => {
-                const meta = getTxMeta(tx, walletId);
+          ) : (
+            <View style={styles.transactionsCard}>
+              {transactions.slice(0, RECENT_LIMIT).map((tx, index, list) => {
                 const incoming = isIncomingTx(tx, walletId);
-                const label = getTxLabel(tx);
-                const date = formatTxDate(tx.created_at);
 
-                const txStatus = tx.status?.toLowerCase() ?? "completed";
-                const sc = STATUS_CONFIG[txStatus] ?? STATUS_CONFIG.completed;
-                const txFormatted = formatBalance(
-                  Math.abs(tx.amount ?? 0),
+                const statusKey = tx.status?.toLowerCase() ?? "completed";
+
+                const status = STATUS_TEXT[statusKey];
+
+                const amount = Math.abs(Number(tx.amount) || 0);
+
+                const amountText = formatBalance(
+                  amount,
                   tx.currency ?? currency,
                 );
 
                 return (
-                  <TouchableOpacity
-                    key={tx.id ?? tx.id}
-                    activeOpacity={0.75}
-                    style={{
-                      backgroundColor: "#fff",
-                      borderRadius: 18,
-                      paddingHorizontal: 14,
-                      paddingVertical: 14,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      shadowColor: "#0B1F3A",
-                      shadowOpacity: 0.05,
-                      shadowRadius: 10,
-                      shadowOffset: { width: 0, height: 3 },
-                      elevation: 3,
-                    }}
+                  <View
+                    key={tx.id ?? tx._id ?? index}
+                    style={[
+                      styles.transactionRow,
+                      index !== list.length - 1 && styles.transactionBorder,
+                    ]}
                   >
-                    {/* Icon */}
                     <View
-                      style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 15,
-                        backgroundColor: meta.iconBg,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginRight: 13,
-                      }}
+                      style={[
+                        styles.transactionIcon,
+                        {
+                          backgroundColor: incoming ? C.greenSoft : C.blueSoft,
+                        },
+                      ]}
                     >
                       <Feather
-                        name={meta.icon as any}
-                        size={20}
-                        color={meta.iconColor}
+                        name={getTxIcon(tx, walletId) as any}
+                        size={18}
+                        color={incoming ? C.green : C.blue}
                       />
                     </View>
 
-                    {/* Label + date */}
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{
-                          color: "#0f1923",
-                          fontWeight: "700",
-                          fontSize: 13.5,
-                          marginBottom: 3,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {label}
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionTitle} numberOfLines={1}>
+                        {getTxLabel(tx)}
                       </Text>
-                      <Text style={{ color: "#94a3b8", fontSize: 11 }}>
-                        {date}
+
+                      <Text style={styles.transactionDate} numberOfLines={1}>
+                        {formatTxDate(tx.created_at)}
                       </Text>
+
+                      {status && (
+                        <View
+                          style={[
+                            styles.transactionStatus,
+                            {
+                              backgroundColor: status.background,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.transactionStatusText,
+                              { color: status.color },
+                            ]}
+                          >
+                            {status.label}
+                          </Text>
+                        </View>
+                      )}
                     </View>
 
-                    {/* Amount + badge */}
-                    <View style={{ alignItems: "flex-end", gap: 5 }}>
+                    <View style={styles.transactionAmount}>
                       <Text
-                        style={{
-                          fontWeight: "800",
-                          fontSize: 14,
-                          color: incoming ? "#16a34a" : "#0f1923",
-                        }}
+                        style={[
+                          styles.amountText,
+                          {
+                            color: incoming ? C.green : C.ink,
+                          },
+                        ]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
                       >
-                        {incoming ? "+" : "-"}
-                        {txFormatted}
+                        {incoming ? "+" : "−"}
+                        {amountText}
                       </Text>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          backgroundColor: sc.bgColor,
-                          borderRadius: 8,
-                          paddingHorizontal: 7,
-                          paddingVertical: 2,
-                          gap: 4,
-                        }}
-                      >
-                        <View
-                          style={{
-                            width: 5,
-                            height: 5,
-                            borderRadius: 3,
-                            backgroundColor: sc.dot,
-                          }}
-                        />
-                        <Text
-                          style={{
-                            fontSize: 10,
-                            fontWeight: "700",
-                            color: sc.textColor,
-                            letterSpacing: 0.2,
-                          }}
-                        >
-                          {sc.label}
-                        </Text>
-                      </View>
+
+                      <Text style={styles.amountType}>
+                        {incoming ? "Received" : "Sent"}
+                      </Text>
                     </View>
-                  </TouchableOpacity>
+                  </View>
                 );
               })}
 
-              {/* View all footer link */}
-              {transactions.length > 2 && (
+              {transactions.length > RECENT_LIMIT && (
                 <TouchableOpacity
-                  onPress={() => router.push("/(tabs)/payments")}
-                  style={{
-                    alignItems: "center",
-                    paddingVertical: 14,
-                    backgroundColor: "#fff",
-                    borderRadius: 18,
-                    marginTop: 2,
-                    borderWidth: 1.5,
-                    borderColor: "#eef2ff",
-                    borderStyle: "dashed",
-                  }}
+                  onPress={openPayments}
+                  activeOpacity={0.75}
+                  style={styles.viewAllButton}
                 >
-                  <Text
-                    style={{
-                      color: "#1D4ED8",
-                      fontSize: 13,
-                      fontWeight: "700",
-                    }}
-                  >
+                  <Text style={styles.viewAllText}>
                     View all {transactions.length} transactions
                   </Text>
+                  <Feather name="arrow-right" size={16} color={C.blue} />
                 </TouchableOpacity>
               )}
             </View>
           )}
         </View>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Your wallet, at a glance.</Text>
+        </View>
       </ScrollView>
 
-      {/* ── PIN Modal ─────────────────────────────────────────────────────── */}
+      {/* ── Transaction PIN prompt ──────────────────────────────── */}
+
       {pinModalVisible && (
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 90,
-            backgroundColor: "rgba(10,8,40,0.6)",
-            justifyContent: "flex-end",
-          }}
-        >
+        <View style={styles.modalOverlay}>
           <Pressable
-            style={{ flex: 1 }}
+            style={styles.modalBackdrop}
             onPress={() => setPinModalVisible(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss PIN reminder"
           />
-          <View
-            style={{
-              backgroundColor: "#fff",
-              borderTopLeftRadius: 28,
-              borderTopRightRadius: 28,
-              padding: 24,
-              paddingBottom: 36,
-            }}
-          >
-            <View
-              style={{
-                width: 44,
-                height: 5,
-                backgroundColor: "#e2e8f0",
-                borderRadius: 3,
-                alignSelf: "center",
-                marginBottom: 20,
-              }}
-            />
-            <View
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 32,
-                backgroundColor: "#fff8ec",
-                alignItems: "center",
-                justifyContent: "center",
-                alignSelf: "center",
-                marginBottom: 14,
-              }}
-            >
-              <Feather name="shield" size={28} color="#f5a623" />
+
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+
+            <View style={styles.modalIcon}>
+              <Feather name="shield" size={25} color={C.blue} />
             </View>
-            <Text
-              style={{
-                textAlign: "center",
-                fontSize: 19,
-                fontWeight: "800",
-                color: "#0f1923",
-              }}
-            >
-              Secure your account
-            </Text>
-            <Text
-              style={{
-                textAlign: "center",
-                fontSize: 13,
-                color: "#64748b",
-                marginTop: 7,
-                marginBottom: 22,
-                paddingHorizontal: 12,
-                lineHeight: 19,
-              }}
-            >
-              Set a 4-digit transaction PIN to protect your payments and
+
+            <Text style={styles.modalTitle}>Secure your wallet</Text>
+
+            <Text style={styles.modalDescription}>
+              Set a 4-digit transaction PIN to help protect your transfers and
               withdrawals.
             </Text>
+
             <TouchableOpacity
               onPress={() => {
                 setPinModalVisible(false);
                 router.push("/(components)/settransactionpin");
               }}
-              style={{
-                backgroundColor: "#0B1F3A",
-                paddingVertical: 15,
-                borderRadius: 16,
-                alignItems: "center",
-              }}
+              activeOpacity={0.8}
+              style={styles.modalPrimaryButton}
             >
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>
-                Set Transaction PIN
-              </Text>
+              <Text style={styles.modalPrimaryText}>Set transaction PIN</Text>
+              <Feather name="arrow-right" size={18} color={C.white} />
             </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => setPinModalVisible(false)}
-              style={{ marginTop: 14, alignItems: "center" }}
+              activeOpacity={0.7}
+              style={styles.modalSecondaryButton}
             >
-              <Text style={{ color: "#94a3b8", fontSize: 13 }}>
-                Maybe later
-              </Text>
+              <Text style={styles.modalSecondaryText}>Not now</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -960,3 +1064,680 @@ export default function HomeScreen() {
     </View>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: C.background,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 44,
+  },
+
+  // Header
+  header: {
+    backgroundColor: C.navy,
+    paddingTop:
+      Platform.OS === "ios" ? 58 : (StatusBar.currentHeight ?? 24) + 18,
+    paddingHorizontal: 22,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+  },
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 30,
+  },
+  profileGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 12,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: C.blue,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  avatarText: {
+    color: C.white,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  greetingGroup: {
+    flex: 1,
+  },
+  greeting: {
+    color: C.whiteSoft,
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  userName: {
+    color: C.white,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  notificationButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: C.whiteChip,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  balanceHeading: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  balanceLabel: {
+    color: C.whiteSoft,
+    fontSize: 13,
+    fontWeight: "500",
+  },
+  currencyLabel: {
+    color: C.whiteSoft,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  eyeButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: C.whiteChip,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  balanceValue: {
+    color: C.white,
+    fontSize: 34,
+    fontWeight: "800",
+    letterSpacing: -0.8,
+    marginTop: 8,
+  },
+  headerDivider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginTop: 23,
+    marginBottom: 17,
+  },
+  accountRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  accountInfo: {
+    flex: 1,
+    marginRight: 10,
+  },
+  accountLabel: {
+    color: C.whiteSoft,
+    fontSize: 11,
+    marginBottom: 6,
+  },
+  accountNumberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  accountNumber: {
+    color: C.white,
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    fontVariant: ["tabular-nums"],
+  },
+  copyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 7,
+    borderRadius: 8,
+    backgroundColor: C.whiteChip,
+  },
+  copyText: {
+    color: C.white,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  accountStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 20,
+    gap: 6,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  accountStatusText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  // Section headings
+  quickActionsSection: {
+    marginTop: 27,
+    paddingHorizontal: 22,
+  },
+  section: {
+    marginTop: 29,
+    paddingHorizontal: 22,
+  },
+  sectionHeading: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    color: C.ink,
+    fontSize: 17,
+    fontWeight: "800",
+    letterSpacing: -0.25,
+  },
+  linkText: {
+    color: C.blue,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // Quick actions
+  actionsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  actionItem: {
+    alignItems: "center",
+    width: "19%",
+  },
+  actionIcon: {
+    width: 49,
+    height: 49,
+    borderRadius: 16,
+    backgroundColor: C.blueSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionLabel: {
+    color: C.text,
+    fontSize: 10.5,
+    fontWeight: "600",
+    textAlign: "center",
+    marginTop: 8,
+    lineHeight: 14,
+  },
+
+  // Statistics
+  statsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: C.line,
+  },
+  statTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  statIcon: {
+    width: 31,
+    height: 31,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statLabel: {
+    flex: 1,
+    color: C.muted,
+    fontSize: 11.5,
+    fontWeight: "600",
+  },
+  statValue: {
+    color: C.ink,
+    fontSize: 19,
+    fontWeight: "800",
+    letterSpacing: -0.6,
+    marginTop: 15,
+  },
+  statNote: {
+    color: C.muted,
+    fontSize: 10.5,
+    marginTop: 7,
+    minHeight: 13,
+  },
+
+  // Chart
+  chartCard: {
+    marginTop: 13,
+    padding: 17,
+    backgroundColor: C.surface,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: C.line,
+  },
+  chartHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 10,
+  },
+  chartTitle: {
+    color: C.ink,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  chartSubtitle: {
+    color: C.muted,
+    fontSize: 11.5,
+    marginTop: 5,
+  },
+  chartTotalContainer: {
+    alignItems: "flex-end",
+    flexShrink: 1,
+  },
+  chartTotalLabel: {
+    color: C.muted,
+    fontSize: 10.5,
+  },
+  chartTotal: {
+    color: C.ink,
+    fontSize: 16,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  chart: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    height: 116,
+    marginTop: 17,
+  },
+  chartColumn: {
+    flex: 1,
+    alignItems: "center",
+    height: "100%",
+  },
+  barTrack: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  chartBar: {
+    width: 14,
+    maxWidth: "65%",
+    borderRadius: 5,
+  },
+  chartDay: {
+    color: C.muted,
+    fontSize: 10,
+    marginTop: 9,
+  },
+  chartDayToday: {
+    color: C.blue,
+    fontWeight: "800",
+  },
+
+  // Pending
+  pendingCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.surface,
+    borderRadius: 17,
+    padding: 14,
+    marginTop: 13,
+    borderWidth: 1,
+    borderColor: C.line,
+    gap: 11,
+  },
+  pendingIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: C.amberSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pendingContent: {
+    flex: 1,
+  },
+  pendingTitle: {
+    color: C.ink,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  pendingDescription: {
+    color: C.muted,
+    fontSize: 11.5,
+    marginTop: 4,
+  },
+
+  // Transactions
+  transactionsCard: {
+    backgroundColor: C.surface,
+    borderRadius: 19,
+    paddingHorizontal: 15,
+    borderWidth: 1,
+    borderColor: C.line,
+  },
+  transactionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    gap: 11,
+  },
+  transactionBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: C.line,
+  },
+  transactionIcon: {
+    width: 43,
+    height: 43,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  transactionInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  transactionTitle: {
+    color: C.ink,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  transactionDate: {
+    color: C.muted,
+    fontSize: 10.5,
+    marginTop: 5,
+  },
+  transactionStatus: {
+    alignSelf: "flex-start",
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  transactionStatusText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  transactionAmount: {
+    alignItems: "flex-end",
+    flexShrink: 0,
+    maxWidth: "43%",
+  },
+  amountText: {
+    fontSize: 12.5,
+    fontWeight: "800",
+    fontVariant: ["tabular-nums"],
+  },
+  amountType: {
+    color: C.muted,
+    fontSize: 10,
+    marginTop: 5,
+  },
+  viewAllButton: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+    borderTopColor: C.line,
+  },
+  viewAllText: {
+    color: C.blue,
+    fontSize: 12.5,
+    fontWeight: "700",
+  },
+
+  // Empty and loading states
+  loadingCard: {
+    minHeight: 130,
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: C.line,
+    gap: 10,
+  },
+  loadingText: {
+    color: C.muted,
+    fontSize: 12,
+  },
+  emptyOverview: {
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    padding: 22,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: C.line,
+  },
+  emptyOverviewIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: C.blueSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyOverviewTitle: {
+    color: C.ink,
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 13,
+  },
+  emptyOverviewDescription: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 19,
+    textAlign: "center",
+    marginTop: 7,
+  },
+  transactionsLoading: {
+    paddingVertical: 35,
+    alignItems: "center",
+  },
+  emptyTransactions: {
+    backgroundColor: C.surface,
+    borderRadius: 19,
+    paddingHorizontal: 22,
+    paddingVertical: 28,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: C.line,
+  },
+  emptyTransactionIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: C.tile,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyTransactionTitle: {
+    color: C.ink,
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 14,
+  },
+  emptyTransactionDescription: {
+    color: C.muted,
+    fontSize: 12,
+    lineHeight: 19,
+    textAlign: "center",
+    marginTop: 6,
+  },
+  emptyActionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    backgroundColor: C.blue,
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    marginTop: 18,
+  },
+  emptyActionText: {
+    color: C.white,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  // Error
+  errorCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: C.redSoft,
+    borderRadius: 15,
+    marginHorizontal: 22,
+    marginTop: 20,
+    padding: 13,
+  },
+  errorIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.surface,
+  },
+  errorContent: {
+    flex: 1,
+  },
+  errorTitle: {
+    color: C.ink,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  errorDescription: {
+    color: C.text,
+    fontSize: 10.5,
+    marginTop: 4,
+  },
+  retryButton: {
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+  },
+  retryText: {
+    color: C.red,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  // Footer
+  footer: {
+    alignItems: "center",
+    marginTop: 30,
+  },
+  footerText: {
+    color: C.faint,
+    fontSize: 11,
+  },
+
+  // PIN modal
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10,
+    justifyContent: "flex-end",
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(15,23,42,0.55)",
+  },
+  modalSheet: {
+    backgroundColor: C.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 25,
+    paddingTop: 13,
+    paddingBottom: Platform.OS === "ios" ? 36 : 26,
+  },
+  modalHandle: {
+    width: 42,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: C.line,
+    alignSelf: "center",
+    marginBottom: 25,
+  },
+  modalIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    backgroundColor: C.blueSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginBottom: 17,
+  },
+  modalTitle: {
+    color: C.ink,
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  modalDescription: {
+    color: C.muted,
+    fontSize: 13,
+    lineHeight: 21,
+    textAlign: "center",
+    marginTop: 10,
+    marginBottom: 24,
+  },
+  modalPrimaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: C.blue,
+    paddingVertical: 16,
+    borderRadius: 15,
+  },
+  modalPrimaryText: {
+    color: C.white,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  modalSecondaryButton: {
+    alignItems: "center",
+    paddingVertical: 15,
+    marginTop: 4,
+  },
+  modalSecondaryText: {
+    color: C.muted,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+});

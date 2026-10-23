@@ -1,12 +1,11 @@
-import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
 import {
-    Platform,
-    ScrollView,
-    StatusBar,
-    Text,
-    TouchableOpacity,
-    View,
+  Platform,
+  ScrollView,
+  StatusBar,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { Ionicons } from "@expo/vector-icons";
@@ -156,30 +155,42 @@ export default function SendMoneyScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: "#f2f4f8" }}>
-      <StatusBar barStyle="light-content" translucent />
+      <StatusBar barStyle="dark-content" translucent />
 
-      <LinearGradient
-        colors={["#1a1060", "#2541c4", "#6a3de8"]}
+      <View
         style={{
+          backgroundColor: "#dbeafe", // light blue
           paddingTop: Platform.OS === "ios" ? 60 : 45,
           paddingBottom: 20,
           paddingHorizontal: 20,
+          borderBottomLeftRadius: 20,
+          borderBottomRightRadius: 20,
         }}
       >
-        <TouchableOpacity onPress={goBack}>
-          <Ionicons name="arrow-back" size={22} color="#fff" />
+        <TouchableOpacity
+          onPress={goBack}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: "#fff",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="arrow-back" size={20} color="#1d4ed8" />
         </TouchableOpacity>
         <Text
           style={{
-            color: "#fff",
+            color: "#0f172a",
             fontSize: 18,
             fontWeight: "700",
-            marginTop: 10,
+            marginTop: 12,
           }}
         >
           {STEP_TITLE[step]}
         </Text>
-      </LinearGradient>
+      </View>
 
       <ScrollView contentContainerStyle={{ padding: 20 }}>
         {step === "type" && (

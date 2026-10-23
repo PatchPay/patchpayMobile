@@ -37,8 +37,8 @@ const InfoRow = ({
   value?: string;
 }) => (
   <View className="flex-row items-center py-4 border-b border-slate-100">
-    <View className="w-9 h-9 rounded-xl bg-sky-50 items-center justify-center mr-4">
-      <Feather name={icon as any} size={16} color="#0ea5e9" />
+    <View className="w-9 h-9 rounded-xl bg-blue-50 items-center justify-center mr-4">
+      <Feather name={icon as any} size={16} color="#2563eb" />
     </View>
     <View className="flex-1">
       <Text className="text-slate-400 text-[10px] uppercase tracking-widest mb-0.5">
@@ -97,26 +97,26 @@ export default function ProfileScreen() {
 
   return (
     <View className="flex-1 bg-white">
-      <StatusBar barStyle="light-content" backgroundColor="#2563eb" />
+      <StatusBar barStyle="dark-content" backgroundColor="#dbeafe" />
 
       {/* ── Header curve ──────────────────────────────────────────────── */}
-      <View className="bg-brand pt-14 pb-20 px-6 rounded-b-lg">
+      <View className="bg-blue-100 pt-14 pb-20 px-6 rounded-b-lg">
         <View className="flex-row justify-between items-center mb-6">
-          <Text className="text-white text-xl font-bold tracking-tight">
+          <Text className="text-slate-900 text-xl font-bold tracking-tight">
             My Profile
           </Text>
           <TouchableOpacity
             onPress={() => router.push("/(components)/settings/settingscreen")}
-            className="w-9 h-9 rounded-xl bg-white/20 items-center justify-center"
+            className="w-9 h-9 rounded-xl bg-white items-center justify-center"
           >
-            <Feather name="settings" size={16} color="#fff" />
+            <Feather name="settings" size={16} color="#1d4ed8" />
           </TouchableOpacity>
         </View>
 
         {/* Avatar */}
         <View className="items-center">
           <View className="relative">
-            <View className="w-24 h-24 rounded-full border-4 border-white overflow-hidden bg-sky-200 items-center justify-center">
+            <View className="w-24 h-24 rounded-full border-4 border-white overflow-hidden bg-blue-600 items-center justify-center">
               {avatar ? (
                 <Image
                   source={{ uri: avatar }}
@@ -124,7 +124,7 @@ export default function ProfileScreen() {
                   resizeMode="cover"
                 />
               ) : (
-                <Text className="text-blue-700 text-3xl font-bold">
+                <Text className="text-white text-3xl font-bold">
                   {loading ? "…" : getInitials(user?.firstName, user?.surname)}
                 </Text>
               )}
@@ -133,16 +133,18 @@ export default function ProfileScreen() {
             {/* Upload button */}
             <TouchableOpacity
               onPress={pickImage}
-              className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-sky-400 border-2 border-white items-center justify-center"
+              className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-blue-700 border-2 border-white items-center justify-center"
             >
               <Feather name="camera" size={13} color="#fff" />
             </TouchableOpacity>
           </View>
 
-          <Text className="text-white text-lg font-bold mt-3">{fullName}</Text>
+          <Text className="text-slate-900 text-lg font-bold mt-3">
+            {fullName}
+          </Text>
           <View className="flex-row items-center gap-1 mt-1">
-            <View className="w-1.5 h-1.5 rounded-full bg-sky-300" />
-            <Text className="text-sky-200 text-xs">
+            <View className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+            <Text className="text-blue-700 text-xs">
               {user?.accountType ?? "Personal"} Account
             </Text>
           </View>
@@ -159,8 +161,8 @@ export default function ProfileScreen() {
           <View className="bg-surface-card rounded-md border border-surface-border shadow-card px-6 py-3 flex-row gap-6">
             <View className="items-center">
               <View className="flex-row items-center gap-1 mb-0.5">
-                <View className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                <Text className="text-sky-500 text-xs font-semibold">
+                <View className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                <Text className="text-blue-600 text-xs font-semibold">
                   {user?.status_client ?? "Active"}
                 </Text>
               </View>
@@ -233,7 +235,7 @@ export default function ProfileScreen() {
         {/* ── Edit profile button ───────────────────────────────────────── */}
         <TouchableOpacity
           onPress={() => router.push("/(components)/settings/settingscreen")}
-          className="bg-brand rounded-md py-4 items-center flex-row justify-center gap-2"
+          className="bg-blue-600 rounded-md py-4 items-center flex-row justify-center gap-2"
         >
           <Feather name="edit-2" size={15} color="#fff" />
           <Text className="text-white font-bold text-sm">Edit Profile</Text>

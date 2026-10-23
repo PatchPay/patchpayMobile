@@ -538,21 +538,29 @@ export default function InvoiceScreen() {
                 </View>
                 <TouchableOpacity
                   onPress={() => {
+                    console.log("Escrow object:", escrow);
+                    console.log("Invoice escrowId:", inv?.escrowId);
+
                     const escrowId =
                       escrow?.id ??
-                      (typeof inv.escrowId === "string"
-                        ? inv.escrowId
-                        : inv.escrowId?.id) ??
-                      inv.escrowId?.id;
+                      (typeof inv?.escrowId === "object"
+                        ? inv.escrowId?.id
+                        : inv?.escrowId);
 
-                    if (escrowId) {
-                      router.push(`/(components)/escrow/${escrowId}`);
+                    console.log("Final escrowId:", escrowId);
+
+                    if (!escrowId) {
+                      alert("Escrow ID not found");
+                      return;
                     }
+
+                    router.push(`/(components)/escrow/${String(escrowId)}`);
                   }}
                   activeOpacity={0.85}
                   style={styles.escrowBtn}
                 >
                   <Text style={styles.escrowBtnText}>Go to Escrow</Text>
+
                   <Ionicons name="arrow-forward" size={16} color="#0057b8" />
                 </TouchableOpacity>
               </View>

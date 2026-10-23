@@ -904,9 +904,9 @@ const EscrowDetailsScreen = () => {
 
                   <Image
                     source={{
-                      uri: getDeliveryProofUrl(
-                        escrow.buyerConfirmationProofUrl,
-                      ) ?? undefined,
+                      uri:
+                        getDeliveryProofUrl(escrow.buyerConfirmationProofUrl) ??
+                        undefined,
                     }}
                     className="w-full h-56 rounded-xl"
                     resizeMode="cover"
@@ -1136,9 +1136,8 @@ const EscrowDetailsScreen = () => {
                   <Image
                     source={{
                       uri:
-                        getDeliveryProofUrl(
-                          escrow.buyerConfirmationProofUrl,
-                        ) || undefined,
+                        getDeliveryProofUrl(escrow.buyerConfirmationProofUrl) ||
+                        undefined,
                     }}
                     className="w-full h-56 rounded-xl"
                     resizeMode="cover"
@@ -1333,7 +1332,9 @@ const EscrowDetailsScreen = () => {
             <View className="flex-row items-center mb-1">
               <XCircle size={20} color="#dc2626" />
 
-              <Text className="text-lg font-semibold ml-2">Dispute Escrow</Text>
+              <Text className="text-lg font-semibold ml-2">
+                Dispute Transaction
+              </Text>
             </View>
 
             <Text className="text-gray-500 text-sm mb-4">
