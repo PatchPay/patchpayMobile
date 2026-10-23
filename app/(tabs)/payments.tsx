@@ -1,7 +1,6 @@
 import { getUser } from "@/api/authapi";
 import { getUserTransactions, getWallet } from "@/api/walletapi";
 import { Feather } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -19,9 +18,11 @@ import {
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const T = {
   bg: "#F8FAFC",
+  headerBg: "#DBEAFE", // light blue
   surface: "#FFFFFF",
   primary: "#1D4ED8",
   primaryDark: "#0B1F3A",
+  blueMid: "#2563EB", // darker blue
   accent: "#3B82F6",
   accentLight: "#DBEAFE",
   navy: "#0F172A",
@@ -395,7 +396,7 @@ export default function TransactionsScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
+      <StatusBar barStyle="dark-content" backgroundColor={T.headerBg} />
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <View
@@ -403,7 +404,9 @@ export default function TransactionsScreen() {
           paddingTop: Platform.OS === "ios" ? 58 : 46,
           paddingHorizontal: 20,
           paddingBottom: 16,
-          backgroundColor: T.bg,
+          backgroundColor: T.headerBg,
+          borderBottomLeftRadius: 24,
+          borderBottomRightRadius: 24,
         }}
       >
         {/* Top bar */}
@@ -451,32 +454,30 @@ export default function TransactionsScreen() {
               width: 40,
               height: 40,
               borderRadius: 13,
-              backgroundColor: T.accentLight,
+              backgroundColor: T.surface,
               alignItems: "center",
               justifyContent: "center",
               borderWidth: 1,
-              borderColor: "#DDD6FE",
+              borderColor: T.blueBorder,
             }}
           >
-            <Feather name="sliders" size={16} color={T.accent} />
+            <Feather name="sliders" size={16} color={T.blueMid} />
           </View>
         </View>
 
-        {/* ── Gradient summary card ─────────────────────────────────────── */}
+        {/* ── Summary card (solid blue) ─────────────────────────────────── */}
         {!loading && (
-          <LinearGradient
-            colors={["#3B82F6", "#6D4ADE", "#8B5CF6"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+          <View
             style={{
+              backgroundColor: T.blueMid,
               borderRadius: 24,
               padding: 20,
               marginBottom: 18,
-              shadowColor: "#3B82F6",
-              shadowOpacity: 0.35,
-              shadowRadius: 20,
-              shadowOffset: { width: 0, height: 8 },
-              elevation: 10,
+              shadowColor: T.blueMid,
+              shadowOpacity: 0.3,
+              shadowRadius: 16,
+              shadowOffset: { width: 0, height: 6 },
+              elevation: 8,
             }}
           >
             <View
@@ -633,7 +634,7 @@ export default function TransactionsScreen() {
                 </Text>
               </View>
             </View>
-          </LinearGradient>
+          </View>
         )}
 
         {/* ── Search bar ────────────────────────────────────────────────── */}
@@ -696,13 +697,13 @@ export default function TransactionsScreen() {
                   paddingHorizontal: 18,
                   paddingVertical: 9,
                   borderRadius: 22,
-                  backgroundColor: active ? T.primary : T.surface,
-                  shadowColor: active ? T.primary : T.shadow,
-                  shadowOpacity: active ? 0.32 : 0.04,
-                  shadowRadius: active ? 12 : 4,
-                  elevation: active ? 6 : 2,
+                  backgroundColor: active ? T.blueMid : T.surface,
+                  shadowColor: active ? T.blueMid : T.shadow,
+                  shadowOpacity: active ? 0.3 : 0.04,
+                  shadowRadius: active ? 10 : 4,
+                  elevation: active ? 5 : 2,
                   borderWidth: 1,
-                  borderColor: active ? T.primary : T.blueBorder,
+                  borderColor: active ? T.blueMid : T.blueBorder,
                 }}
               >
                 <Text
@@ -762,7 +763,7 @@ export default function TransactionsScreen() {
               justifyContent: "center",
               marginBottom: 16,
               borderWidth: 1,
-              borderColor: "#DDD6FE",
+              borderColor: T.blueBorder,
             }}
           >
             <Feather name="inbox" size={28} color={T.accent} />
@@ -795,11 +796,11 @@ export default function TransactionsScreen() {
               onPress={() => setSearch("")}
               style={{
                 marginTop: 18,
-                backgroundColor: T.primary,
+                backgroundColor: T.blueMid,
                 paddingHorizontal: 22,
                 paddingVertical: 11,
                 borderRadius: 14,
-                shadowColor: T.primary,
+                shadowColor: T.blueMid,
                 shadowOpacity: 0.3,
                 shadowRadius: 10,
                 elevation: 5,
@@ -818,7 +819,7 @@ export default function TransactionsScreen() {
           renderItem={renderTx}
           contentContainerStyle={{
             paddingHorizontal: 18,
-            paddingTop: 6,
+            paddingTop: 16,
             paddingBottom: 110,
           }}
           showsVerticalScrollIndicator={false}

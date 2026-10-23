@@ -41,13 +41,13 @@ const SettingRow = ({
   >
     <View
       className={`w-9 h-9 rounded-xl items-center justify-center mr-4 ${
-        danger ? "bg-red-50" : "bg-sky-50"
+        danger ? "bg-red-50" : "bg-blue-50"
       }`}
     >
       <Feather
         name={icon as any}
         size={16}
-        color={danger ? "#ef4444" : "#0ea5e9"}
+        color={danger ? "#ef4444" : "#2563eb"}
       />
     </View>
     <View className="flex-1">
@@ -69,7 +69,7 @@ const SettingRow = ({
       <Switch
         value={value}
         onValueChange={onToggle}
-        trackColor={{ false: "#e2e8f0", true: "#38bdf8" }}
+        trackColor={{ false: "#e2e8f0", true: "#60a5fa" }}
         thumbColor="#fff"
       />
     )}
@@ -115,18 +115,18 @@ export default function SettingsScreen() {
 
   return (
     <View className="flex-1 bg-white">
-      <StatusBar barStyle="light-content" backgroundColor="#2563eb" />
+      <StatusBar barStyle="dark-content" backgroundColor="#dbeafe" />
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <View className="bg-brand pt-14 pb-8 px-6 rounded-b-lg">
+      <View className="bg-blue-100 pt-14 pb-8 px-6 rounded-b-lg">
         <View className="flex-row items-center gap-3">
           <TouchableOpacity
             onPress={() => router.back()}
-            className="w-9 h-9 rounded-xl bg-white/20 items-center justify-center"
+            className="w-9 h-9 rounded-xl bg-white items-center justify-center"
           >
-            <Feather name="arrow-left" size={16} color="#fff" />
+            <Feather name="arrow-left" size={16} color="#1d4ed8" />
           </TouchableOpacity>
-          <Text className="text-white text-xl font-bold tracking-tight">
+          <Text className="text-slate-900 text-xl font-bold tracking-tight">
             Settings
           </Text>
         </View>

@@ -115,6 +115,7 @@ export interface CreateRFQPayload {
     postal_code: string;
   };
   currency: string;
+  paymentProvider: string;
   line_total: number;
   delivery_charge: number;
   transaction_charges: number;
