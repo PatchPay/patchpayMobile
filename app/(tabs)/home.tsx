@@ -60,8 +60,6 @@ const CURRENCY_LOCALE: Record<SupportedCurrency, string> = {
   TZS: "en-TZ",
 };
 
-const NUM = { fontVariant: ["tabular-nums"] as const };
-
 // ─── Formatting ───────────────────────────────────────────────────────────────
 
 const formatMoney = (
@@ -513,8 +511,6 @@ export default function HomeScreen() {
     return status === "pending" || status === "processing";
   }).length;
 
-  const showWidgets = !loading && transactions.length > 0;
-
   const copyAccountNumber = async () => {
     if (accountNumber === "—") return;
 
@@ -586,7 +582,7 @@ export default function HomeScreen() {
 
           <View style={styles.balanceHeading}>
             <View>
-              <Text style={styles.balanceLabel}>Total wallet balance</Text>
+              <Text style={styles.balanceLabel}>Account balance</Text>
               <Text style={styles.currencyLabel}>{currency}</Text>
             </View>
 
@@ -1681,17 +1677,19 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 25,
-    paddingTop: 13,
-    paddingBottom: Platform.OS === "ios" ? 36 : 26,
+    paddingTop: 30,
+    paddingBottom: Platform.OS === "ios" ? 50 : 40,
+    height: 490,
+    justifyContent: "center",
   },
-  modalHandle: {
-    width: 42,
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: C.line,
-    alignSelf: "center",
-    marginBottom: 25,
-  },
+  // modalHandle: {
+  //   width: 42,
+  //   height: 4,
+  //   borderRadius: 4,
+  //   backgroundColor: C.line,
+  //   alignSelf: "center",
+  //   marginBottom: 70,
+  // },
   modalIcon: {
     width: 60,
     height: 60,

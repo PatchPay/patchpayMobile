@@ -109,6 +109,8 @@ export interface Invoice {
 }
 
 export interface InitiateInvoicePaymentResponse {
+  message: string;
+  data: any;
   success: boolean;
   paymentUrl: string;
   reference: string;

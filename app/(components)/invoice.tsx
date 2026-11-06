@@ -4,52 +4,85 @@ import { Escrow } from "@/types/escrow";
 import { Invoice } from "@/types/invoice";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import Toast from "react-native-toast-message";
-import { WebView, WebViewNavigation } from "react-native-webview";
+
+// ─── constants ──────────────────────────────────────────────────────────────
+
+const PRIMARY = "#0057b8";
+const PIN_LENGTH = 4;
+const UNPAID_STATUSES = ["unpaid", "pending"];
+
+const STATUS_GROUPS = {
+  success: ["paid", "active", "funded", "accepted", "success"],
+  error: ["failed", "cancelled", "rejected"],
+};
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 const statusStyles = (status?: string) => {
-  const s = status?.toLowerCase();
-  if (
-    s === "paid" ||
-    s === "active" ||
-    s === "funded" ||
-    s === "accepted" ||
-    s === "success"
-  ) {
-    return { bg: "#DBEAFE", color: "#1D4ED8", label: status?.toUpperCase() };
+  const s = status?.toLowerCase() ?? "";
+  const label = status?.toUpperCase();
+
+  if (STATUS_GROUPS.success.includes(s)) {
+    return { bg: "#DBEAFE", color: "#1D4ED8", label };
   }
-  if (s === "failed" || s === "cancelled" || s === "rejected") {
-    return { bg: "#FEF2F2", color: "#EF4444", label: status?.toUpperCase() };
+  if (STATUS_GROUPS.error.includes(s)) {
+    return { bg: "#FEF2F2", color: "#EF4444", label };
   }
-  return { bg: "#FFFBEB", color: "#F59E0B", label: status?.toUpperCase() };
+  return { bg: "#FFFBEB", color: "#F59E0B", label };
 };
 
-const fmt = (n?: number, currency = "NGN") =>
+const formatMoney = (amount?: number, currency = "NGN") =>
   new Intl.NumberFormat("en-GB", { style: "currency", currency }).format(
-    n ?? 0,
+    amount ?? 0,
   );
+
+const formatDate = (
+  date?: string | Date | null,
+  options: Intl.DateTimeFormatOptions = {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  },
+) => (date ? new Date(date).toLocaleDateString("en-GB", options) : "—");
+
+const formatTime = (time?: string | null) =>
+  time
+    ? new Date(`1970-01-01T${time}`).toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "—";
+
+const fullName = (person?: { firstName?: string; surname?: string }) =>
+  `${person?.firstName ?? ""} ${person?.surname ?? ""}`.trim() || "—";
+
+const joinParts = (...parts: (string | undefined | null)[]) =>
+  parts.filter(Boolean).join(", ") || "—";
 
 // ─── sub-components ─────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status?: string }) {
-  const s = statusStyles(status);
+  const { bg, color, label } = statusStyles(status);
   return (
-    <View style={[styles.badge, { backgroundColor: s.bg }]}>
-      <View style={[styles.badgeDot, { backgroundColor: s.color }]} />
-      <Text style={[styles.badgeText, { color: s.color }]}>{s.label}</Text>
+    <View style={[styles.badge, { backgroundColor: bg }]}>
+      <View style={[styles.badgeDot, { backgroundColor: color }]} />
+      <Text style={[styles.badgeText, { color }]}>{label}</Text>
     </View>
   );
 }
@@ -88,53 +121,164 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
+type PinModalProps = {
+  visible: boolean;
+  amount: string;
+  pin: string;
+  error: string;
+  paying: boolean;
+  onChangePin: (value: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+};
+
+function PinModal({
+  visible,
+  amount,
+  pin,
+  error,
+  paying,
+  onChangePin,
+  onConfirm,
+  onClose,
+}: PinModalProps) {
+  const handleClose = () => {
+    if (!paying) onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={handleClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.pinModalOverlay}
+      >
+        <View style={styles.pinModalCard}>
+          <View style={styles.pinIcon}>
+            <Ionicons name="shield-checkmark" size={28} color={PRIMARY} />
+          </View>
+
+          <Text style={styles.pinTitle}>Confirm Your Payment</Text>
+          <Text style={styles.pinDescription}>
+            Enter your 4-digit transaction PIN to authorize this wallet payment.
+          </Text>
+
+          <View style={styles.pinAmountBox}>
+            <Text style={styles.pinAmountLabel}>AMOUNT TO PAY</Text>
+            <Text style={styles.pinAmount}>{amount}</Text>
+            <Text style={styles.pinEscrowNote}>
+              <Ionicons name="lock-closed" size={12} color="#16834A" /> Funds
+              will be secured in escrow.
+            </Text>
+          </View>
+
+          <Text style={styles.pinInputLabel}>Transaction PIN</Text>
+          <TextInput
+            value={pin}
+            onChangeText={onChangePin}
+            keyboardType="number-pad"
+            secureTextEntry
+            maxLength={PIN_LENGTH}
+            placeholder="••••"
+            placeholderTextColor="#A0AEC0"
+            editable={!paying}
+            style={[styles.pinInput, !!error && styles.pinInputError]}
+          />
+          {!!error && <Text style={styles.pinErrorText}>{error}</Text>}
+
+          <TouchableOpacity
+            style={[styles.confirmPayBtn, paying && { opacity: 0.7 }]}
+            onPress={onConfirm}
+            disabled={paying || pin.length !== PIN_LENGTH}
+            activeOpacity={0.85}
+          >
+            {paying ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="lock-closed" size={18} color="#fff" />
+                <Text style={styles.confirmPayText}>Confirm & Pay</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.cancelPayBtn}
+            disabled={paying}
+            onPress={onClose}
+          >
+            <Text style={styles.cancelPayText}>Cancel</Text>
+          </TouchableOpacity>
+
+          <View style={styles.pinSecurityNote}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={15}
+              color="#16834A"
+            />
+            <Text style={styles.pinSecurityText}>
+              Your transaction PIN is securely verified.
+            </Text>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 // ─── main screen ────────────────────────────────────────────────────────────
 
 export default function InvoiceScreen() {
   const { invoiceId } = useLocalSearchParams<{ invoiceId: string }>();
-
   const { user } = useAuth();
-  const [invoice, setInvoice] = useState<Invoice | null>(null); // using `any` to cover full response shape
+
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [escrow, setEscrow] = useState<Escrow | null>(null);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [showWebView, setShowWebView] = useState(false);
-  const [checkoutUrl, setCheckoutUrl] = useState("");
-  const [currentRef, setCurrentRef] = useState<string | null>(null);
-  const [webViewLoading, setWebViewLoading] = useState(true);
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [transactionPin, setTransactionPin] = useState("");
+  const [pinError, setPinError] = useState("");
 
-  const webViewRef = useRef<WebView>(null);
+  // The RFQ payload is nested under `rfq` (`rfqId` is just the numeric id).
+  // TODO: add `rfq` to the Invoice type so this cast can go.
+  const rfq = (invoice as any)?.rfq;
 
+  // `user_data` / `destinatary_user` are full user objects, so the plain id
+  // fields must be checked first or String(object) becomes "[object Object]".
   const currentUserId = String(user?.id ?? "");
-
-  const inv = invoice;
-  const rfq = (inv as any)?.rfq;
-
-  // FIX: `rfq.user_data` / `rfq.destinatary_user` are full USER OBJECTS
-  // (see usage below: rfq?.user_data?.firstName, rfq?.destinatary_user?.firstName).
-  // The old `??` chains put those objects FIRST, so `String(rfq.destinatary_user)`
-  // resolved to the literal string "[object Object]" instead of an actual id,
-  // meaning `buyerId` could never match `currentUserId` and the Pay button
-  // never rendered for the buyer. Id fields must be checked before the object.
   const sellerId = String(
     rfq?.user_id ?? rfq?.user ?? rfq?.user_data?.id ?? "",
   );
-
   const buyerId = String(
     rfq?.destinatary_user_id ?? rfq?.destinatary_user?.id ?? "",
   );
-
   const isSeller = currentUserId === sellerId;
   const isBuyer = currentUserId === buyerId;
+
+  const paymentStatus = invoice?.paymentStatus ?? invoice?.status;
+  const awaitingPayment = UNPAID_STATUSES.includes(paymentStatus ?? "");
+
+  const totalDue = rfq?.total ?? invoice?.amount;
+  const totalCurrency = rfq?.currency ?? invoice?.currency;
+
+  const escrowId =
+    escrow?.id ??
+    (typeof invoice?.escrowId === "object"
+      ? invoice.escrowId?.id
+      : invoice?.escrowId);
 
   const loadInvoice = useCallback(async () => {
     if (!invoiceId) return;
     setError(null);
     try {
-      const data = await invoiceService.getInvoice(invoiceId);
-      setInvoice(data);
+      setInvoice(await invoiceService.getInvoice(invoiceId));
     } catch (e: any) {
       setError(e?.response?.data?.message || e.message);
     } finally {
@@ -146,112 +290,420 @@ export default function InvoiceScreen() {
     loadInvoice();
   }, [loadInvoice]);
 
-  const handlePay = async () => {
+  const closePinModal = () => {
+    setShowPinModal(false);
+    setTransactionPin("");
+    setPinError("");
+  };
+
+  const openPinModal = () => {
+    setTransactionPin("");
+    setPinError("");
+    setShowPinModal(true);
+  };
+
+  const handlePinChange = (value: string) => {
+    setTransactionPin(value.replace(/\D/g, "").slice(0, PIN_LENGTH));
+    setPinError("");
+  };
+
+  const confirmPayment = async () => {
     if (!invoiceId) return;
 
+    if (!new RegExp(`^\\d{${PIN_LENGTH}}$`).test(transactionPin)) {
+      setPinError(`Enter your ${PIN_LENGTH}-digit transaction PIN.`);
+      return;
+    }
+
     setPaying(true);
+    setPinError("");
 
     try {
-      const payment = await invoiceService.initiatePayment(invoiceId);
+      const payment = await invoiceService.initiatePayment(
+        invoiceId,
+        transactionPin,
+      );
 
-      console.log("Payment Response:", payment);
+      if (!payment?.success) {
+        throw new Error(payment?.message || "Unable to complete payment.");
+      }
 
-      setCurrentRef(payment.reference);
-      setCheckoutUrl(payment.paymentUrl);
-      setShowWebView(true);
-    } catch (e: any) {
+      if (payment.data?.invoice) setInvoice(payment.data.invoice);
+      if (payment.data?.escrow) setEscrow(payment.data.escrow);
+
+      closePinModal();
+
       Toast.show({
-        type: "error",
-        text1: "Payment Failed",
-        text2: e?.response?.data?.message || e.message,
+        type: "success",
+        text1: "Payment Successful",
+        text2: "Your wallet has been debited and funds secured in escrow.",
       });
+
+      await loadInvoice();
+    } catch (e: any) {
+      handlePaymentError(e);
     } finally {
       setPaying(false);
     }
   };
 
-  const verifyPayment = async (reference: string) => {
-    try {
-      const result = await invoiceService.verifyPayment(reference);
+  const handlePaymentError = (e: any) => {
+    const response = e?.response?.data;
 
-      console.log("Verification Result:", result);
+    switch (response?.code) {
+      case "INCORRECT_TRANSACTION_PIN":
+        setPinError("Incorrect PIN. Please try again.");
+        setTransactionPin("");
+        return;
 
-      if (result.success) {
-        setInvoice(result.data.invoice);
+      case "INVALID_PIN_FORMAT":
+        setPinError(`Please enter a valid ${PIN_LENGTH}-digit PIN.`);
+        return;
 
-        if (result.data.escrow) {
-          setEscrow(result.data.escrow);
-        }
-
+      case "TRANSACTION_PIN_NOT_SET":
+        closePinModal();
         Toast.show({
-          type: "success",
-          text1: "Payment Successful",
-          text2: "Escrow funded successfully",
+          type: "error",
+          text1: "Transaction PIN Required",
+          text2: "Please set up your transaction PIN before paying.",
         });
+        // TODO: router.push to the set-transaction-PIN route.
+        return;
 
-        await loadInvoice();
-      }
-      // success logic...
-    } catch (error: any) {
-      console.log("========== VERIFY PAYMENT ERROR ==========");
-      console.log("Full Error:", error);
-      console.log("Message:", error?.message);
-      console.log("Status:", error?.response?.status);
-      console.log("Response Data:", error?.response?.data);
-      console.log("Backend Message:", error?.response?.data?.message);
-      console.log("=========================================");
-
-      Toast.show({
-        type: "error",
-        text1: "Verification Failed",
-        text2: error?.response?.data?.message || error.message,
-      });
-    }
-  };
-
-  const handleNavigationStateChange = (navState: WebViewNavigation) => {
-    const { url } = navState;
-
-    console.log("WebView URL:", url);
-
-    if (url.includes("/api/invoices/callback")) {
-      let reference = currentRef;
-
-      try {
-        const urlObj = new URL(url);
-
-        reference =
-          urlObj.searchParams.get("reference") ||
-          urlObj.searchParams.get("transaction_ref") ||
-          currentRef;
-      } catch {}
-
-      setShowWebView(false);
-
-      if (reference) {
-        verifyPayment(reference);
+      case "INSUFFICIENT_BALANCE": {
+        closePinModal();
+        const shortfall = response?.data?.shortfall;
+        const currency = response?.data?.currency || invoice?.currency || "NGN";
+        Toast.show({
+          type: "error",
+          text1: "Insufficient Wallet Balance",
+          text2:
+            shortfall != null
+              ? `You need ${formatMoney(shortfall, currency)} more. Please fund your wallet.`
+              : response?.message || "Please fund your wallet.",
+          visibilityTime: 5000,
+        });
+        return;
       }
     }
+
+    const message = response?.message || e?.message;
+    setPinError(message || "Payment failed. Please try again.");
+    Toast.show({
+      type: "error",
+      text1: "Payment Failed",
+      text2: message || "Please try again.",
+    });
   };
 
-  const handleCloseWebView = () => {
-    setShowWebView(false);
+  const goToEscrow = () => {
+    if (!escrowId) {
+      Toast.show({ type: "error", text1: "Escrow ID not found" });
+      return;
+    }
+    router.push(`/(components)/escrow/${String(escrowId)}`);
+  };
 
-    if (currentRef) {
-      Toast.show({
-        type: "info",
-        text1: "Payment not verified",
-        text2: "Tap Verify Payment if you completed the payment.",
-        visibilityTime: 4000,
-      });
+  const goBackToRfq = () => {
+    if (rfq?.id) {
+      router.push(`/(components)/rfq/${rfq.id}`);
+    } else {
+      router.back();
     }
   };
 
-  // The RFQ payload is nested under `rfq` (not `rfqId` — that field is just the numeric id)
+  // ── render helpers ──
 
-  console.log("invoice data:", inv);
+  const renderInvoiceCard = (inv: Invoice) => (
+    <View style={styles.invoiceCard}>
+      <View style={styles.cardHeader}>
+        <View>
+          <Text style={styles.cardHeaderLabel}>INVOICE</Text>
+          <Text style={styles.cardHeaderId}>#{rfq?.uprn ?? inv.id}</Text>
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={styles.cardHeaderLabel}>DATE ISSUED</Text>
+          <Text style={styles.cardHeaderDate}>{formatDate(inv.createdAt)}</Text>
+        </View>
+      </View>
 
-  console.log("this is the invoice data", inv?.amount);
+      <View style={styles.partiesRow}>
+        <View style={styles.party}>
+          <Text style={styles.partyRole}>FROM</Text>
+          <Text style={styles.partyName}>{fullName(rfq?.user_data)}</Text>
+          <Text style={styles.partyDetail}>
+            {rfq?.user_data?.phoneNumber ?? "—"}
+          </Text>
+        </View>
+
+        <View style={styles.partyArrow}>
+          <Ionicons name="arrow-forward" size={18} color={PRIMARY} />
+        </View>
+
+        <View style={[styles.party, { alignItems: "flex-end" }]}>
+          <Text style={[styles.partyRole, { textAlign: "right" }]}>
+            BILL TO
+          </Text>
+          <Text style={styles.partyName}>
+            {fullName(rfq?.destinatary_user)}
+          </Text>
+          <Text style={styles.partyDetail}>
+            {rfq?.destinatary_user?.phoneNumber ?? "—"}
+          </Text>
+        </View>
+      </View>
+
+      <Divider />
+
+      <View style={styles.lineHeader}>
+        <Text style={[styles.lineCol, { flex: 3 }]}>DESCRIPTION</Text>
+        <Text style={[styles.lineCol, { textAlign: "center" }]}>QTY</Text>
+        <Text style={[styles.lineCol, { textAlign: "right", flex: 2 }]}>
+          AMOUNT
+        </Text>
+      </View>
+
+      <View style={styles.lineItem}>
+        <Text style={[styles.lineItemText, { flex: 3 }]}>
+          {rfq?.product_description ?? inv.description}
+        </Text>
+        <Text style={[styles.lineItemText, { textAlign: "center" }]}>
+          {rfq?.product_quantity ?? inv.metadata?.productQuantity}
+        </Text>
+        <Text
+          style={[
+            styles.lineItemText,
+            { textAlign: "right", flex: 2, fontWeight: "700" },
+          ]}
+        >
+          {formatMoney(rfq?.subtotal ?? inv.amount, inv.currency)}
+        </Text>
+      </View>
+
+      <Divider />
+
+      <View style={styles.totalsBlock}>
+        <InfoRow
+          label="Subtotal"
+          value={formatMoney(rfq?.subtotal ?? inv.amount, inv.currency)}
+        />
+        <InfoRow
+          label="Delivery"
+          value={
+            rfq?.delivery_charge
+              ? formatMoney(rfq.delivery_charge, inv.currency)
+              : "Free"
+          }
+        />
+        <InfoRow
+          label="Transaction Charges"
+          value={formatMoney(rfq?.transaction_charges, inv.currency)}
+        />
+        {rfq?.exchange_rate && rfq.exchange_rate !== 1 && (
+          <InfoRow label="Exchange Rate" value={`×${rfq.exchange_rate}`} />
+        )}
+      </View>
+
+      <View style={styles.totalBand}>
+        <Text style={styles.totalLabel}>TOTAL DUE</Text>
+        <Text style={styles.totalAmount}>
+          {formatMoney(totalDue, inv.currency)}
+        </Text>
+      </View>
+    </View>
+  );
+
+  const renderDeliveryCard = () => {
+    const address = rfq?.delivery_address;
+    if (!address) return null;
+
+    return (
+      <View style={styles.card}>
+        <SectionHeader title="Delivery Details" />
+        <View style={{ gap: 6, marginTop: 12 }}>
+          <InfoRow label="Type" value={rfq.delivery_type} />
+          <InfoRow label="Trade" value={rfq.trade_type} />
+          <InfoRow
+            label="Arrival Date"
+            value={formatDate(rfq.arrival_date, {
+              weekday: "short",
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })}
+          />
+          <InfoRow label="Arrival Time" value={formatTime(rfq.arrival_time)} />
+          <InfoRow label="Street" value={address.street} />
+          <InfoRow
+            label="City"
+            value={joinParts(address.city, address.state)}
+          />
+          <InfoRow label="Country" value={address.country} />
+          <InfoRow label="Post Code" value={address.postal_code} />
+          <InfoRow label="Phone" value={address.phoneNumber} />
+
+          {rfq.delivery_code && (
+            <View style={styles.deliveryCodeBox}>
+              <Ionicons name="lock-closed" size={14} color={PRIMARY} />
+              <Text style={styles.deliveryCodeText}>
+                Delivery Code: {rfq.delivery_code}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  const renderEscrowCard = (inv: Invoice) => {
+    if (!escrow && !inv.escrowId) return null;
+
+    return (
+      <View style={[styles.card, styles.escrowCard]}>
+        <View style={styles.escrowHeader}>
+          <Ionicons name="shield-checkmark" size={22} color={PRIMARY} />
+          <Text style={styles.escrowTitle}>Escrow Active</Text>
+        </View>
+        <Text style={styles.escrowSub}>
+          Funds are held securely until delivery is confirmed.
+        </Text>
+
+        <View style={{ gap: 6, marginTop: 14 }}>
+          <InfoRow label="Escrow ID" value={escrowId ?? "—"} />
+          <InfoRow
+            label="Status"
+            value={(
+              escrow?.status ??
+              inv.escrowId?.status ??
+              "active"
+            ).toUpperCase()}
+          />
+          <InfoRow
+            label="Amount"
+            value={formatMoney(
+              escrow?.amount ??
+                inv.escrowId?.amount ??
+                rfq?.amount ??
+                inv.amount,
+              escrow?.currency ?? rfq?.currency ?? inv.currency,
+            )}
+          />
+        </View>
+
+        <TouchableOpacity
+          onPress={goToEscrow}
+          activeOpacity={0.85}
+          style={styles.escrowBtn}
+        >
+          <Text style={styles.escrowBtnText}>Go to Escrow</Text>
+          <Ionicons name="arrow-forward" size={16} color={PRIMARY} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderPaymentActions = () => {
+    if (!awaitingPayment) return null;
+
+    return (
+      <>
+        {isBuyer && (
+          <TouchableOpacity
+            onPress={openPinModal}
+            disabled={paying}
+            activeOpacity={0.85}
+            style={styles.payBtn}
+          >
+            {paying ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <View style={styles.payBtnInner}>
+                <Ionicons
+                  name="card-outline"
+                  size={20}
+                  color="#fff"
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.payBtnText}>
+                  Pay {formatMoney(totalDue, totalCurrency)}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {isSeller && (
+          <>
+            <View style={styles.waitingPaymentCard}>
+              <View style={styles.waitingPaymentIcon}>
+                <Ionicons name="time-outline" size={22} color="#F59E0B" />
+              </View>
+              <View style={styles.waitingPaymentContent}>
+                <Text style={styles.waitingPaymentTitle}>
+                  Waiting for Buyer Payment
+                </Text>
+                <Text style={styles.waitingPaymentText}>
+                  The buyer has not paid this invoice yet. Once payment is
+                  completed, the funds will be secured in escrow and you can
+                  proceed with the order.
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={goBackToRfq}
+              activeOpacity={0.85}
+              style={styles.backToRfqBtn}
+            >
+              <Ionicons name="arrow-back-outline" size={18} color={PRIMARY} />
+              <Text style={styles.backToRfqText}>Back to RFQ</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </>
+    );
+  };
+
+  const renderBody = () => {
+    if (loading) {
+      return (
+        <ActivityIndicator
+          color={PRIMARY}
+          style={{ marginTop: 60 }}
+          size="large"
+        />
+      );
+    }
+
+    if (error) {
+      return (
+        <View style={styles.errorCard}>
+          <Ionicons name="alert-circle" size={32} color="#cf1322" />
+          <Text style={styles.errorTitle}>Unable to load invoice</Text>
+          <Text style={styles.errorBody}>{error}</Text>
+          <TouchableOpacity onPress={loadInvoice} style={styles.retryBtn}>
+            <Text style={styles.retryText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (!invoice) return null;
+
+    return (
+      <>
+        {renderInvoiceCard(invoice)}
+        {renderDeliveryCard()}
+        {renderEscrowCard(invoice)}
+        {renderPaymentActions()}
+
+        <Text style={styles.footer}>
+          Generated on {new Date(invoice.createdAt).toLocaleString("en-GB")} ·
+          Ref: {invoice.id}
+        </Text>
+      </>
+    );
+  };
 
   return (
     <View style={styles.root}>
@@ -261,18 +713,17 @@ export default function InvoiceScreen() {
         barStyle="dark-content"
       />
 
-      {/* ── top bar ── */}
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={20} color="#0057b8" />
+          <Ionicons name="arrow-back" size={20} color={PRIMARY} />
         </TouchableOpacity>
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={styles.topTitle}>Invoice</Text>
           <Text style={styles.topSub}>
-            Quote #{rfq?.quote_number ?? inv?.metadata?.quoteNumber ?? "—"}
+            Quote #{rfq?.quote_number ?? invoice?.metadata?.quoteNumber ?? "—"}
           </Text>
         </View>
-        {inv && <StatusBadge status={inv.paymentStatus ?? inv.status} />}
+        {invoice && <StatusBadge status={paymentStatus} />}
       </View>
 
       <ScrollView
@@ -280,444 +731,25 @@ export default function InvoiceScreen() {
           <RefreshControl
             refreshing={loading}
             onRefresh={loadInvoice}
-            tintColor="#0057b8"
+            tintColor={PRIMARY}
           />
         }
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {loading ? (
-          <ActivityIndicator
-            color="#0057b8"
-            style={{ marginTop: 60 }}
-            size="large"
-          />
-        ) : error ? (
-          <View style={styles.errorCard}>
-            <Ionicons name="alert-circle" size={32} color="#cf1322" />
-            <Text style={styles.errorTitle}>Unable to load invoice</Text>
-            <Text style={styles.errorBody}>{error}</Text>
-            <TouchableOpacity onPress={loadInvoice} style={styles.retryBtn}>
-              <Text style={styles.retryText}>Try Again</Text>
-            </TouchableOpacity>
-          </View>
-        ) : inv ? (
-          <>
-            {/* ── invoice card ── */}
-            <View style={styles.invoiceCard}>
-              {/* header band */}
-              <View style={styles.cardHeader}>
-                <View>
-                  <Text style={styles.cardHeaderLabel}>INVOICE</Text>
-                  <Text style={styles.cardHeaderId}>
-                    #{rfq?.uprn ?? inv.id}
-                  </Text>
-                </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={styles.cardHeaderLabel}>DATE ISSUED</Text>
-                  <Text style={styles.cardHeaderDate}>
-                    {new Date(inv.createdAt).toLocaleDateString("en-GB", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    })}
-                  </Text>
-                </View>
-              </View>
-
-              {/* parties */}
-              <View style={styles.partiesRow}>
-                <View style={styles.party}>
-                  <Text style={styles.partyRole}>FROM</Text>
-                  <Text style={styles.partyName}>
-                    {`${rfq?.user_data?.firstName ?? ""} ${
-                      rfq?.user_data?.surname ?? ""
-                    }`.trim() || "—"}
-                  </Text>
-                  <Text style={styles.partyDetail}>
-                    {rfq?.user_data?.phoneNumber ?? "—"}
-                  </Text>
-                </View>
-                <View style={styles.partyArrow}>
-                  <Ionicons name="arrow-forward" size={18} color="#0057b8" />
-                </View>
-                <View style={[styles.party, { alignItems: "flex-end" }]}>
-                  <Text style={[styles.partyRole, { textAlign: "right" }]}>
-                    BILL TO
-                  </Text>
-                  <Text style={styles.partyName}>
-                    {`${rfq?.destinatary_user?.firstName ?? ""} ${
-                      rfq?.destinatary_user?.surname ?? ""
-                    }`.trim() || "—"}
-                  </Text>
-                  <Text style={styles.partyDetail}>
-                    {rfq?.destinatary_user?.phoneNumber ?? "—"}
-                  </Text>
-                </View>
-              </View>
-
-              <Divider />
-
-              {/* line item */}
-              <View style={styles.lineHeader}>
-                <Text style={[styles.lineCol, { flex: 3 }]}>DESCRIPTION</Text>
-                <Text style={[styles.lineCol, { textAlign: "center" }]}>
-                  QTY
-                </Text>
-                <Text style={[styles.lineCol, { textAlign: "right", flex: 2 }]}>
-                  AMOUNT
-                </Text>
-              </View>
-
-              <View style={styles.lineItem}>
-                <Text style={[styles.lineItemText, { flex: 3 }]}>
-                  {rfq?.product_description ?? inv.description}
-                </Text>
-                <Text style={[styles.lineItemText, { textAlign: "center" }]}>
-                  {rfq?.product_quantity ?? inv.metadata?.productQuantity}
-                </Text>
-                <Text
-                  style={[
-                    styles.lineItemText,
-                    { textAlign: "right", flex: 2, fontWeight: "700" },
-                  ]}
-                >
-                  {fmt(rfq?.subtotal ?? inv.amount, inv.currency)}
-                </Text>
-              </View>
-
-              <Divider />
-
-              {/* totals */}
-              <View style={styles.totalsBlock}>
-                <InfoRow
-                  label="Subtotal"
-                  value={fmt(rfq?.subtotal ?? inv.amount, inv.currency)}
-                />
-                <InfoRow
-                  label="Delivery"
-                  value={
-                    rfq?.delivery_charge
-                      ? fmt(rfq?.delivery_charge, inv.currency)
-                      : "Free"
-                  }
-                />
-                <InfoRow
-                  label="Transaction Charges"
-                  value={fmt(rfq?.transaction_charges, inv.currency)}
-                />
-                {rfq?.exchange_rate && rfq?.exchange_rate !== 1 && (
-                  <InfoRow
-                    label="Exchange Rate"
-                    value={`×${rfq?.exchange_rate}`}
-                  />
-                )}
-              </View>
-
-              <View style={styles.totalBand}>
-                <Text style={styles.totalLabel}>TOTAL DUE</Text>
-                <Text style={styles.totalAmount}>
-                  {fmt(rfq?.total ?? inv.amount, inv.currency)}
-                </Text>
-              </View>
-            </View>
-
-            {/* ── delivery details ── */}
-
-            {rfq?.delivery_address && (
-              <View style={styles.card}>
-                <SectionHeader title="Delivery Details" />
-                <View style={{ gap: 6, marginTop: 12 }}>
-                  <InfoRow label="Type" value={rfq?.delivery_type} />
-                  <InfoRow label="Trade" value={rfq?.trade_type} />
-
-                  <InfoRow
-                    label="Arrival Date"
-                    value={
-                      rfq?.arrival_date
-                        ? new Date(rfq.arrival_date).toLocaleDateString(
-                            "en-GB",
-                            {
-                              weekday: "short",
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            },
-                          )
-                        : "—"
-                    }
-                  />
-
-                  <InfoRow
-                    label="Arrival Time"
-                    value={
-                      rfq?.arrival_time
-                        ? new Date(
-                            `1970-01-01T${rfq.arrival_time}`,
-                          ).toLocaleTimeString([], {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })
-                        : "—"
-                    }
-                  />
-
-                  <InfoRow
-                    label="Street"
-                    value={rfq?.delivery_address?.street}
-                  />
-                  <InfoRow
-                    label="City"
-                    value={`${rfq?.delivery_address?.city}, ${rfq?.delivery_address?.state}`}
-                  />
-                  <InfoRow
-                    label="Country"
-                    value={rfq?.delivery_address?.country}
-                  />
-                  <InfoRow
-                    label="Post Code"
-                    value={rfq?.delivery_address?.postal_code}
-                  />
-                  <InfoRow
-                    label="Phone"
-                    value={rfq?.delivery_address?.phoneNumber}
-                  />
-
-                  {rfq?.delivery_code && (
-                    <View style={styles.deliveryCodeBox}>
-                      <Ionicons name="lock-closed" size={14} color="#0057b8" />
-                      <Text style={styles.deliveryCodeText}>
-                        Delivery Code: {rfq?.delivery_code}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* ── escrow ── */}
-            {(escrow || inv.escrowId || inv.escrowId) && (
-              <View style={[styles.card, styles.escrowCard]}>
-                <View style={styles.escrowHeader}>
-                  <Ionicons name="shield-checkmark" size={22} color="#0057b8" />
-                  <Text style={styles.escrowTitle}>Escrow Active</Text>
-                </View>
-                <Text style={styles.escrowSub}>
-                  Funds are held securely until delivery is confirmed.
-                </Text>
-                <View style={{ gap: 6, marginTop: 14 }}>
-                  <InfoRow
-                    label="Escrow ID"
-                    value={
-                      escrow?.id ??
-                      (typeof inv.escrowId === "string"
-                        ? inv.escrowId
-                        : inv.escrowId?.id) ??
-                      inv.escrowId?.id ??
-                      "—"
-                    }
-                  />
-                  <InfoRow
-                    label="Status"
-                    value={(
-                      escrow?.status ??
-                      inv.escrowId?.status ??
-                      "active"
-                    ).toUpperCase()}
-                  />
-                  <InfoRow
-                    label="Amount"
-                    value={fmt(
-                      escrow?.amount ??
-                        inv.escrowId?.amount ??
-                        rfq?.amount ??
-                        inv.amount,
-                      escrow?.currency ?? rfq?.currency ?? inv.currency,
-                    )}
-                  />
-                </View>
-                <TouchableOpacity
-                  onPress={() => {
-                    console.log("Escrow object:", escrow);
-                    console.log("Invoice escrowId:", inv?.escrowId);
-
-                    const escrowId =
-                      escrow?.id ??
-                      (typeof inv?.escrowId === "object"
-                        ? inv.escrowId?.id
-                        : inv?.escrowId);
-
-                    console.log("Final escrowId:", escrowId);
-
-                    if (!escrowId) {
-                      alert("Escrow ID not found");
-                      return;
-                    }
-
-                    router.push(`/(components)/escrow/${String(escrowId)}`);
-                  }}
-                  activeOpacity={0.85}
-                  style={styles.escrowBtn}
-                >
-                  <Text style={styles.escrowBtnText}>Go to Escrow</Text>
-
-                  <Ionicons name="arrow-forward" size={16} color="#0057b8" />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* ── pay button ── */}
-            {/* ── payment actions ── */}
-            {(inv.paymentStatus ?? inv.status) === "unpaid" ||
-            (inv.paymentStatus ?? inv.status) === "pending" ? (
-              <>
-                {isBuyer && (
-                  <TouchableOpacity
-                    onPress={handlePay}
-                    disabled={paying}
-                    activeOpacity={0.85}
-                    style={styles.payBtn}
-                  >
-                    {paying ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <View style={styles.payBtnInner}>
-                        <Ionicons
-                          name="card-outline"
-                          size={20}
-                          color="#fff"
-                          style={{ marginRight: 8 }}
-                        />
-
-                        <Text style={styles.payBtnText}>
-                          Pay{" "}
-                          {fmt(
-                            rfq?.total ?? inv.amount,
-                            rfq?.currency ?? inv.currency,
-                          )}
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                )}
-
-                {isSeller && (
-                  <>
-                    <View style={styles.waitingPaymentCard}>
-                      <View style={styles.waitingPaymentIcon}>
-                        <Ionicons
-                          name="time-outline"
-                          size={22}
-                          color="#F59E0B"
-                        />
-                      </View>
-
-                      <View style={styles.waitingPaymentContent}>
-                        <Text style={styles.waitingPaymentTitle}>
-                          Waiting for Buyer Payment
-                        </Text>
-
-                        <Text style={styles.waitingPaymentText}>
-                          The buyer has not paid this invoice yet. Once payment
-                          is completed, the funds will be secured in escrow and
-                          you can proceed with the order.
-                        </Text>
-                      </View>
-                    </View>
-
-                    <TouchableOpacity
-                      onPress={() => {
-                        if (rfq?.id) {
-                          router.push(`/(components)/rfq/${rfq.id}`);
-                        } else {
-                          router.back();
-                        }
-                      }}
-                      activeOpacity={0.85}
-                      style={styles.backToRfqBtn}
-                    >
-                      <Ionicons
-                        name="arrow-back-outline"
-                        size={18}
-                        color="#0057b8"
-                      />
-
-                      <Text style={styles.backToRfqText}>Back to RFQ</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </>
-            ) : null}
-
-            {/* footer note */}
-            <Text style={styles.footer}>
-              Generated on {new Date(inv.createdAt).toLocaleString("en-GB")} ·
-              Ref: {inv.id}
-            </Text>
-          </>
-        ) : null}
+        {renderBody()}
       </ScrollView>
-      {showWebView && (
-        <View
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "#fff",
-            zIndex: 999,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              paddingTop: 50,
-              paddingHorizontal: 16,
-              paddingBottom: 10,
-              backgroundColor: "#fff",
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 18,
-                fontWeight: "700",
-              }}
-            >
-              Complete Payment
-            </Text>
 
-            <TouchableOpacity onPress={handleCloseWebView}>
-              <Ionicons name="close" size={28} color="#000" />
-            </TouchableOpacity>
-          </View>
-
-          <WebView
-            ref={webViewRef}
-            source={{ uri: checkoutUrl }}
-            startInLoadingState
-            onNavigationStateChange={handleNavigationStateChange}
-            onLoadStart={() => setWebViewLoading(true)}
-            onLoadEnd={() => setWebViewLoading(false)}
-          />
-
-          {webViewLoading && (
-            <View
-              style={{
-                position: "absolute",
-                top: "50%",
-                left: 0,
-                right: 0,
-                alignItems: "center",
-              }}
-            >
-              <ActivityIndicator size="large" color="#0057b8" />
-            </View>
-          )}
-        </View>
-      )}
+      <PinModal
+        visible={showPinModal}
+        amount={formatMoney(totalDue, totalCurrency || "NGN")}
+        pin={transactionPin}
+        error={pinError}
+        paying={paying}
+        onChangePin={handlePinChange}
+        onConfirm={confirmPayment}
+        onClose={closePinModal}
+      />
     </View>
   );
 }
@@ -726,61 +758,7 @@ export default function InvoiceScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#f0f4fa" },
-
-  waitingPaymentCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "#FFFBEB",
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-
-  waitingPaymentIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#FEF3C7",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  waitingPaymentContent: {
-    flex: 1,
-  },
-
-  waitingPaymentTitle: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#92400E",
-    marginBottom: 4,
-  },
-
-  waitingPaymentText: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#A16207",
-  },
-
-  backToRfqBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "#E6F0FF",
-    borderRadius: 14,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: "#CDE3FF",
-  },
-
-  backToRfqText: {
-    color: "#0057b8",
-    fontSize: 14,
-    fontWeight: "800",
-  },
+  scroll: { padding: 16, paddingBottom: 48, gap: 14 },
 
   // top bar
   topBar: {
@@ -833,21 +811,19 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
 
-  scroll: { padding: 16, paddingBottom: 48, gap: 14 },
-
   // invoice card
   invoiceCard: {
     backgroundColor: "#fff",
     borderRadius: 18,
     overflow: "hidden",
-    shadowColor: "#0057b8",
+    shadowColor: PRIMARY,
     shadowOpacity: 0.08,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
   },
   cardHeader: {
-    backgroundColor: "#0057b8",
+    backgroundColor: PRIMARY,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
@@ -874,6 +850,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
+  // parties
   partiesRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -930,9 +907,8 @@ const styles = StyleSheet.create({
   },
   infoLabel: { fontSize: 12, color: "#7a8fad", fontWeight: "500" },
   infoValue: { fontSize: 12, color: "#1a2d4a", fontWeight: "600" },
-
   totalBand: {
-    backgroundColor: "#0057b8",
+    backgroundColor: PRIMARY,
     marginTop: 18,
     paddingHorizontal: 20,
     paddingVertical: 16,
@@ -953,25 +929,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // generic card
+  // generic card + section header
   card: {
     backgroundColor: "#fff",
     borderRadius: 16,
     padding: 18,
-    shadowColor: "#0057b8",
+    shadowColor: PRIMARY,
     shadowOpacity: 0.05,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
   },
-
-  // section headers
   sectionHeader: { flexDirection: "row", alignItems: "center" },
   sectionAccent: {
     width: 3,
     height: 16,
     borderRadius: 2,
-    backgroundColor: "#0057b8",
+    backgroundColor: PRIMARY,
     marginRight: 9,
   },
   sectionTitle: {
@@ -994,7 +968,7 @@ const styles = StyleSheet.create({
   },
   deliveryCodeText: {
     fontSize: 13,
-    color: "#0057b8",
+    color: PRIMARY,
     fontWeight: "800",
     letterSpacing: 0.5,
   },
@@ -1007,7 +981,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 6,
   },
-  escrowTitle: { fontSize: 15, fontWeight: "900", color: "#0057b8" },
+  escrowTitle: { fontSize: 15, fontWeight: "900", color: PRIMARY },
   escrowSub: { fontSize: 12, color: "#7a8fad", lineHeight: 18 },
   escrowBtn: {
     flexDirection: "row",
@@ -1019,15 +993,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "rgba(0,87,184,0.06)",
   },
-  escrowBtnText: { color: "#0057b8", fontWeight: "700", fontSize: 14 },
+  escrowBtnText: { color: PRIMARY, fontWeight: "700", fontSize: 14 },
 
   // pay button
   payBtn: {
-    backgroundColor: "#0057b8",
+    backgroundColor: PRIMARY,
     borderRadius: 16,
     paddingVertical: 17,
     alignItems: "center",
-    shadowColor: "#0057b8",
+    shadowColor: PRIMARY,
     shadowOpacity: 0.35,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
@@ -1041,6 +1015,140 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
+  // waiting-for-payment (seller view)
+  waitingPaymentCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+  },
+  waitingPaymentIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: "#FEF3C7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  waitingPaymentContent: { flex: 1 },
+  waitingPaymentTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#92400E",
+    marginBottom: 4,
+  },
+  waitingPaymentText: { fontSize: 12, lineHeight: 18, color: "#A16207" },
+  backToRfqBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#E6F0FF",
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "#CDE3FF",
+  },
+  backToRfqText: { color: PRIMARY, fontSize: 14, fontWeight: "800" },
+
+  // transaction PIN modal
+  pinModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(5, 20, 45, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  pinModalCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+  },
+  pinIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#E6F0FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  pinTitle: { fontSize: 20, fontWeight: "900", color: "#0b1e3d" },
+  pinDescription: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: "#7a8fad",
+    textAlign: "center",
+    marginTop: 8,
+  },
+  pinAmountBox: {
+    width: "100%",
+    backgroundColor: "#F0F6FF",
+    borderRadius: 14,
+    padding: 16,
+    alignItems: "center",
+    marginTop: 22,
+    marginBottom: 22,
+  },
+  pinAmountLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#7a8fad",
+    letterSpacing: 1.2,
+  },
+  pinAmount: { fontSize: 25, fontWeight: "900", color: PRIMARY, marginTop: 5 },
+  pinEscrowNote: { fontSize: 11, color: "#16834A", marginTop: 7 },
+  pinInputLabel: {
+    alignSelf: "flex-start",
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#0b1e3d",
+    marginBottom: 10,
+  },
+  pinInput: {
+    width: "100%",
+    height: 58,
+    borderWidth: 1.5,
+    borderColor: "#CDE3FF",
+    borderRadius: 13,
+    backgroundColor: "#FAFCFF",
+    textAlign: "center",
+    fontSize: 25,
+    fontWeight: "800",
+    letterSpacing: 15,
+    color: "#0b1e3d",
+  },
+  pinInputError: { borderColor: "#EF4444" },
+  pinErrorText: {
+    color: "#EF4444",
+    fontSize: 12,
+    marginTop: 8,
+    alignSelf: "flex-start",
+  },
+  confirmPayBtn: {
+    width: "100%",
+    backgroundColor: PRIMARY,
+    borderRadius: 13,
+    paddingVertical: 16,
+    marginTop: 20,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 9,
+  },
+  confirmPayText: { fontSize: 15, fontWeight: "800", color: "#fff" },
+  cancelPayBtn: { paddingVertical: 14 },
+  cancelPayText: { fontSize: 14, fontWeight: "700", color: "#7a8fad" },
+  pinSecurityNote: { flexDirection: "row", alignItems: "center", gap: 6 },
+  pinSecurityText: { fontSize: 10, color: "#16834A", fontWeight: "600" },
+
   // error
   errorCard: {
     backgroundColor: "#fff",
@@ -1052,7 +1160,7 @@ const styles = StyleSheet.create({
   errorTitle: { fontSize: 15, fontWeight: "800", color: "#0b1e3d" },
   errorBody: { fontSize: 13, color: "#7a8fad", textAlign: "center" },
   retryBtn: {
-    backgroundColor: "#0057b8",
+    backgroundColor: PRIMARY,
     borderRadius: 10,
     paddingHorizontal: 24,
     paddingVertical: 11,

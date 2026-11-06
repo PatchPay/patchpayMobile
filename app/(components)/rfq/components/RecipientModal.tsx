@@ -49,9 +49,7 @@ export default function RecipientModal({
       console.log("this the user", data.data);
     } catch (e: any) {
       const message =
-        e.response?.data?.message ||
-        e.response?.data?.error ||
-        e.message;
+        e.response?.data?.message || e.response?.data?.error || e.message;
 
       setError(message || "An error occurred while searching for the user.");
       console.log("❌ ERROR searching for user:", message);
@@ -76,6 +74,7 @@ export default function RecipientModal({
             borderTopRightRadius: 24,
             padding: 24,
             paddingBottom: 40,
+            height: 390,
           }}
         >
           <View
