@@ -100,7 +100,7 @@ const getTxMeta = (tx: any, walletId: string) => {
 
 const getTxLabel = (tx: any): string => {
   const type: string = tx.type?.toLowerCase() ?? "";
-  if (type === "deposit") return "Wallet Top-up";
+  if (type === "deposit") return "Account Top-up";
   if (type === "withdrawal") return "Withdrawal";
   if (type === "transfer")
     return tx.description?.includes("to") ? tx.description : "Transfer";

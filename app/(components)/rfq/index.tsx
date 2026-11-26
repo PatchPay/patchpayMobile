@@ -703,7 +703,7 @@ export default function RFQScreen() {
                 value={amount}
                 onChangeText={setAmount}
                 keyboardType="numeric"
-                placeholder="500000"
+                placeholder="enter your amount"
               />
             </FieldCard>
             <FieldCard

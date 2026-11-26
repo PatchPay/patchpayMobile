@@ -95,7 +95,7 @@ export default function WithdrawScreen() {
         setWalletLoading(true);
         const wallet = await getWallet();
         const data = wallet?.data ?? wallet;
-        setWalletBalance(Number(data?.balance ?? 0));
+        setWalletBalance(Number(data?.available_balance ?? 0));
       } catch (error) {
         console.log("❌ Wallet fetch failed:", error);
       } finally {

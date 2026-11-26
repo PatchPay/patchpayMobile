@@ -1,7 +1,7 @@
-import { Tabs } from "expo-router";
-import { View, Text } from "react-native";
 import Feather from "@expo/vector-icons/Feather";
 import FontAwesome6 from "@expo/vector-icons/FontAwesome6";
+import { Tabs } from "expo-router";
+import { Text, View } from "react-native";
 
 export default function TabsLayout() {
   return (
@@ -38,11 +38,11 @@ export default function TabsLayout() {
         },
       }}
     >
-      {/* DASHBOARD */}
+      {/* HOME */}
       <Tabs.Screen
         name="home"
         options={{
-          title: "Dashboard",
+          title: "Home",
           tabBarIcon: ({ color, focused }) => (
             <View style={{ alignItems: "center", gap: 4 }}>
               {focused && (
@@ -57,7 +57,7 @@ export default function TabsLayout() {
                   }}
                 />
               )}
-              <Feather name="grid" size={21} color={color} />
+              <Feather name="home" size={21} color={color} />
             </View>
           ),
           tabBarLabel: ({ color, focused }) => (
@@ -68,7 +68,7 @@ export default function TabsLayout() {
                 color,
               }}
             >
-              Dashboard
+              Home
             </Text>
           ),
         }}
