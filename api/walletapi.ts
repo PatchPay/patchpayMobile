@@ -2,12 +2,66 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import API from "./axiosInstance";
 
 export const getWallet = async () => {
-  const res = await API.get("/wallet/details", {
-    headers: {
-      Authorization: `Bearer ${await AsyncStorage.getItem("token")}`,
-    },
-  });
+  const res = await API.get("/wallet/balances");
   return res.data;
+};
+
+/** Balances are returned by the server and must never be inferred from one another. */
+export type WalletBalance = {
+  balance: number;
+  available_balance: number;
+  currency: string;
+  [key: string]: unknown;
+};
+
+export type TransferDirection = "account_to_wallet" | "wallet_to_account";
+
+export type BalanceTransferPayload = {
+  amount: number;
+  direction: TransferDirection;
+  transactionPin: string;
+};
+
+export const transferBetweenBalances = async (
+  payload: BalanceTransferPayload,
+) => {
+  const headers = await getAuthHeaders();
+
+  const endpoint =
+    payload.direction === "account_to_wallet"
+      ? "/wallet/account-to-wallet"
+      : "/wallet/wallet-to-account";
+
+  const idempotencyKey = `${payload.direction}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+
+  try {
+    const res = await API.post(
+      endpoint,
+      {
+        amount: payload.amount,
+        transactionPin: payload.transactionPin,
+        idempotencyKey,
+      },
+      {
+        headers: {
+          ...headers,
+          "Idempotency-Key": idempotencyKey,
+        },
+      },
+    );
+
+    return res.data;
+  } catch (error: any) {
+    const message =
+      error?.response?.data?.message ||
+      error?.response?.data?.error ||
+      error?.message ||
+      "Transfer failed. Please try again.";
+
+    throw new Error(message);
+  }
 };
 
 export const getUserTransactions = async (id: number) => {

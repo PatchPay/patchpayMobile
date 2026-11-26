@@ -8,7 +8,7 @@ interface AxiosRequestConfigWithMeta extends InternalAxiosRequestConfig {
 }
 
 const API = axios.create({
-  baseURL: "https://api.191.218.161.153.nip.io/api/",
+  baseURL: process.env.EXPO_PUBLIC_API_URL || "https://api.191.218.161.153.nip.io/api/",
   timeout: 20000,
 });
 

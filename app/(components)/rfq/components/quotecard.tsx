@@ -861,7 +861,7 @@ export default function QuoteCard({
                     value={editAmount}
                     onChangeText={setEditAmount}
                     keyboardType="numeric"
-                    placeholder="500000"
+                    placeholder="enter your amount"
                     style={inputStyle}
                   />
                 </View>

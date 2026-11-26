@@ -1,13 +1,15 @@
 import { getUser } from "@/api/authapi";
-import { getUserTransactions, getWallet } from "@/api/walletapi";
-import { Feather, Ionicons } from "@expo/vector-icons";
-import * as Clipboard from "expo-clipboard";
-import { router } from "expo-router";
+import {
+  getUserTransactions,
+  getWallet,
+  transferBetweenBalances,
+} from "@/api/walletapi";
+import { Feather } from "@expo/vector-icons";
+import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   RefreshControl,
@@ -19,6 +21,8 @@ import {
   View,
 } from "react-native";
 
+import BalanceCard from "../(components)/BalanceCard";
+import MoveMoneySheet from "../(components)/Movemoneysheet";
 import NotificationBell from "../(components)/notification/notificationbell";
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
@@ -50,6 +54,11 @@ const C = {
 
 const RECENT_LIMIT = 3;
 
+const readBalance = (value: unknown): number => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+};
+
 type SupportedCurrency = "NGN" | "USD" | "EUR" | "GBP" | "TZS";
 
 const CURRENCY_LOCALE: Record<SupportedCurrency, string> = {
@@ -59,8 +68,6 @@ const CURRENCY_LOCALE: Record<SupportedCurrency, string> = {
   GBP: "en-GB",
   TZS: "en-TZ",
 };
-
-const NUM = { fontVariant: ["tabular-nums"] as const };
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
 
@@ -331,10 +338,10 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [pinModalVisible, setPinModalVisible] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [transferVisible, setTransferVisible] = useState(false);
+  const [moveFrom, setMoveFrom] = useState<"account" | "wallet">("account");
   const [fetchError, setFetchError] = useState(false);
 
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -379,29 +386,19 @@ export default function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-
-    const initialize = async () => {
-      await fetchData();
-
-      if (mounted) setLoading(false);
-    };
-
-    initialize();
-
-    return () => {
-      mounted = false;
-
-      if (copyTimer.current) {
-        clearTimeout(copyTimer.current);
-      }
-
-      if (pinTimer.current) {
-        clearTimeout(pinTimer.current);
-      }
-    };
-  }, [fetchData]);
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setLoading(true);
+      fetchData().finally(() => {
+        if (active) setLoading(false);
+      });
+      return () => {
+        active = false;
+        if (pinTimer.current) clearTimeout(pinTimer.current);
+      };
+    }, [fetchData]),
+  );
 
   useEffect(() => {
     if (loading || !user || user.hasTransactionPin) return;
@@ -427,7 +424,14 @@ export default function HomeScreen() {
     }
   }, [fetchData]);
 
-  const balance = Number(wallet?.balance) || 0;
+  // ── Derived values ──────────────────────────────────────────────────────
+
+  const walletBalance = readBalance(wallet?.balance);
+  const accountBalance = readBalance(
+    wallet?.availableBalance ?? wallet?.availableBalance,
+  );
+  console.log("this is the available balance", accountBalance);
+  const spendableWalletBalance = readBalance(wallet?.availableBalance);
   const currency: string = wallet?.currency ?? "NGN";
   const walletId: string = wallet?.id ?? wallet?._id ?? wallet?.walletId ?? "";
 
@@ -441,13 +445,33 @@ export default function HomeScreen() {
   const surname: string =
     user?.surname ?? user?.lastName ?? user?.last_name ?? "";
 
-  const formattedBalance = loading
-    ? "—"
-    : balanceVisible
-      ? formatBalance(balance, currency)
-      : "••••••••";
-
   const greeting = getGreeting();
+
+  const mask = (amount: number) =>
+    balanceVisible ? formatMoney(amount, currency, 2) : "••••••••";
+
+  const handleTransfer = async (payload: {
+    from: "account" | "wallet";
+    to: "account" | "wallet";
+    amount: number;
+    pin: string;
+  }) => {
+    try {
+      const direction =
+        payload.from === "account" ? "account_to_wallet" : "wallet_to_account";
+
+      await transferBetweenBalances({
+        amount: payload.amount,
+        direction,
+        transactionPin: payload.pin,
+      });
+
+      await fetchData();
+    } catch (error) {
+      console.error("Balance transfer failed:", error);
+      throw error;
+    }
+  };
 
   const now = new Date();
   const year = now.getFullYear();
@@ -513,30 +537,6 @@ export default function HomeScreen() {
     return status === "pending" || status === "processing";
   }).length;
 
-  const showWidgets = !loading && transactions.length > 0;
-
-  const copyAccountNumber = async () => {
-    if (accountNumber === "—") return;
-
-    try {
-      await Clipboard.setStringAsync(accountNumber);
-      setCopied(true);
-
-      if (copyTimer.current) {
-        clearTimeout(copyTimer.current);
-      }
-
-      copyTimer.current = setTimeout(() => {
-        setCopied(false);
-      }, 1800);
-    } catch {
-      Alert.alert(
-        "Unable to copy",
-        "Please try copying your account number again.",
-      );
-    }
-  };
-
   const openPayments = () => {
     router.push("/(tabs)/payments");
   };
@@ -558,7 +558,7 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* ── Wallet header ──────────────────────────────────────── */}
+        {/* ── Header (greeting only) ─────────────────────────────── */}
 
         <View style={styles.header}>
           <View style={styles.headerTop}>
@@ -583,101 +583,22 @@ export default function HomeScreen() {
               <NotificationBell />
             </View>
           </View>
-
-          <View style={styles.balanceHeading}>
-            <View>
-              <Text style={styles.balanceLabel}>Total wallet balance</Text>
-              <Text style={styles.currencyLabel}>{currency}</Text>
-            </View>
-
-            <Pressable
-              onPress={() => setBalanceVisible((visible) => !visible)}
-              accessibilityRole="button"
-              accessibilityLabel={
-                balanceVisible ? "Hide wallet balance" : "Show wallet balance"
-              }
-              hitSlop={10}
-              style={styles.eyeButton}
-            >
-              <Ionicons
-                name={balanceVisible ? "eye-outline" : "eye-off-outline"}
-                size={20}
-                color={C.white}
-              />
-            </Pressable>
-          </View>
-
-          <Text
-            style={styles.balanceValue}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            {formattedBalance}
-          </Text>
-
-          <View style={styles.headerDivider} />
-
-          <View style={styles.accountRow}>
-            <View style={styles.accountInfo}>
-              <Text style={styles.accountLabel}>Account number</Text>
-
-              <View style={styles.accountNumberRow}>
-                <Text style={styles.accountNumber}>
-                  {loading ? "Loading..." : accountNumber}
-                </Text>
-
-                {!loading && accountNumber !== "—" && (
-                  <Pressable
-                    onPress={copyAccountNumber}
-                    hitSlop={10}
-                    accessibilityRole="button"
-                    accessibilityLabel="Copy account number"
-                    style={styles.copyButton}
-                  >
-                    <Feather
-                      name={copied ? "check" : "copy"}
-                      size={15}
-                      color={copied ? "#86EFAC" : C.white}
-                    />
-                    <Text style={styles.copyText}>
-                      {copied ? "Copied" : "Copy"}
-                    </Text>
-                  </Pressable>
-                )}
-              </View>
-            </View>
-
-            <View
-              style={[
-                styles.accountStatus,
-                {
-                  backgroundColor: isActive
-                    ? "rgba(34,197,94,0.15)"
-                    : "rgba(248,113,113,0.15)",
-                },
-              ]}
-            >
-              <View
-                style={[
-                  styles.statusDot,
-                  {
-                    backgroundColor: isActive ? "#4ADE80" : "#F87171",
-                  },
-                ]}
-              />
-              <Text
-                style={[
-                  styles.accountStatusText,
-                  {
-                    color: isActive ? "#BBF7D0" : "#FECACA",
-                  },
-                ]}
-              >
-                {isActive ? "Active" : "Inactive"}
-              </Text>
-            </View>
-          </View>
         </View>
+
+        {/* ── Balances (overlaps the header) ─────────────────────── */}
+
+        <BalanceCard
+          loading={loading}
+          visible={balanceVisible}
+          onToggleVisible={() => setBalanceVisible((v) => !v)}
+          walletText={mask(walletBalance)}
+          walletAvailableText={mask(spendableWalletBalance)}
+          currency={currency}
+          accountNumber={accountNumber}
+          isActive={isActive}
+          onTopUp={() => router.push("/(components)/topupscreen")}
+          onSendToOther={() => router.push("/(components)/sendmoney")}
+        />
 
         {/* ── Quick actions ─────────────────────────────────────── */}
 
@@ -691,6 +612,8 @@ export default function HomeScreen() {
                 onPress={() => router.push(action.path)}
                 activeOpacity={0.72}
                 style={styles.actionItem}
+                accessibilityRole="button"
+                accessibilityLabel={action.label}
               >
                 <View style={styles.actionIcon}>
                   <Feather name={action.icon as any} size={21} color={C.blue} />
@@ -1014,6 +937,21 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
+      {/* ── Move money sheet ────────────────────────────────────── */}
+
+      <MoveMoneySheet
+        visible={transferVisible}
+        onClose={() => setTransferVisible(false)}
+        walletBalance={spendableWalletBalance}
+        accountBalance={accountBalance}
+        currency={currency}
+        hasPin={Boolean(user?.hasTransactionPin)}
+        initialFrom={moveFrom}
+        format={(n) => formatMoney(n, currency, 2)}
+        onSubmit={handleTransfer}
+        onSetPin={() => router.push("/(components)/settransactionpin")}
+      />
+
       {/* ── Transaction PIN prompt ──────────────────────────────── */}
 
       {pinModalVisible && (
@@ -1026,8 +964,6 @@ export default function HomeScreen() {
           />
 
           <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-
             <View style={styles.modalIcon}>
               <Feather name="shield" size={25} color={C.blue} />
             </View>
@@ -1079,13 +1015,13 @@ const styles = StyleSheet.create({
     paddingBottom: 44,
   },
 
-  // Header
+  // Header (the balance card overlaps its bottom edge)
   header: {
     backgroundColor: C.navy,
     paddingTop:
       Platform.OS === "ios" ? 58 : (StatusBar.currentHeight ?? 24) + 18,
     paddingHorizontal: 22,
-    paddingBottom: 24,
+    paddingBottom: 76,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
   },
@@ -1093,7 +1029,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 30,
   },
   profileGroup: {
     flexDirection: "row",
@@ -1137,100 +1072,6 @@ const styles = StyleSheet.create({
     backgroundColor: C.whiteChip,
     alignItems: "center",
     justifyContent: "center",
-  },
-  balanceHeading: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  balanceLabel: {
-    color: C.whiteSoft,
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  currencyLabel: {
-    color: C.whiteSoft,
-    fontSize: 11,
-    marginTop: 4,
-  },
-  eyeButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: C.whiteChip,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  balanceValue: {
-    color: C.white,
-    fontSize: 34,
-    fontWeight: "800",
-    letterSpacing: -0.8,
-    marginTop: 8,
-  },
-  headerDivider: {
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    marginTop: 23,
-    marginBottom: 17,
-  },
-  accountRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  accountInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  accountLabel: {
-    color: C.whiteSoft,
-    fontSize: 11,
-    marginBottom: 6,
-  },
-  accountNumberRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  accountNumber: {
-    color: C.white,
-    fontSize: 15,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-    fontVariant: ["tabular-nums"],
-  },
-  copyButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingVertical: 4,
-    paddingHorizontal: 7,
-    borderRadius: 8,
-    backgroundColor: C.whiteChip,
-  },
-  copyText: {
-    color: C.white,
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  accountStatus: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 20,
-    gap: 6,
-  },
-  statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  accountStatusText: {
-    fontSize: 11,
-    fontWeight: "700",
   },
 
   // Section headings
@@ -1666,7 +1507,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
-  // PIN modal
+  // PIN reminder modal
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
@@ -1681,16 +1522,9 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 25,
-    paddingTop: 13,
-    paddingBottom: Platform.OS === "ios" ? 36 : 26,
-  },
-  modalHandle: {
-    width: 42,
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: C.line,
-    alignSelf: "center",
-    marginBottom: 25,
+    paddingTop: 30,
+    paddingBottom: Platform.OS === "ios" ? 50 : 40,
+    justifyContent: "center",
   },
   modalIcon: {
     width: 60,
